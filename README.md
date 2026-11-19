@@ -1,4 +1,16 @@
-# NBT App SDK
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" alt="NBTFoundry" height="44">
+  </picture>
+</p>
+
+<h1 align="center">NBT App SDK</h1>
+
+<p align="center">
+  <b>Write an application for the iDrive screen</b><br>
+  in plain C++11; build it for the head unit and for a Linux desktop.
+</p>
 
 The C++ SDK for applications that run under NBT Manager on BMW NBT Evo
 (iDrive 6) head units. It gives an application its side of the manager's
@@ -8,10 +20,28 @@ panel, audio output with the car's audio routing, and logging that ends up in
 the application's log on the car. The same code builds for the head unit
 (QNX 6.5, ARMv7) and for a Linux desktop, where the window is an X11 window.
 
+**Supported head units:** BMW NBT Evo (iDrive 6). Support for the earlier NBT
+may come later.
+
+Part of [NBTFoundry](https://github.com/NBTFoundry):
+[manager](https://github.com/NBTFoundry/manager) (runs the applications) ·
+[doom](https://github.com/NBTFoundry/doom) (an application on this SDK) ·
+[mobile-app](https://github.com/NBTFoundry/mobile-app) (phone app) ·
+[installer](https://github.com/NBTFoundry/installer) (desktop installer)
+
 Not affiliated with or endorsed by BMW AG. BMW, iDrive and NBT are trademarks
 of BMW AG.
 
 ## Contents
+
+```mermaid
+flowchart LR
+  APP["Your application"] --> MIXER["libnbt-audio-mixer<br/>AudioMixer"]
+  APP --> SDK["libnbt-sdk<br/>Lifecycle · Settings · Log<br/>VideoEgl · AudioPcm · AudioRoute<br/>InputMixer · BackGesture<br/>controller &amp; gamepad readers"]
+  APP --> GLES2["libnbt-gles2<br/>GL1 → GLES2 shim"]
+  MIXER --> SDK
+  SDK <-->|"ready · heartbeat · status<br/>settings · input"| MGR["NBT Manager"]
+```
 
 | Library | What it gives an application |
 | --- | --- |
@@ -21,6 +51,40 @@ of BMW AG.
 
 The API is described in [docs/api.md](docs/api.md); the bridge contract it
 implements is `NBTFoundry/manager: docs/app-bridge.md`.
+
+## A minimal application
+
+```cpp
+#include "nbt/app/clock.hpp"
+#include "nbt/app/lifecycle.hpp"
+#include "nbt/app/log.hpp"
+#include "nbt/app/video.hpp"
+#include "nbt/controller/input.hpp"
+
+int main(int argc, char** argv) {
+  nbt::app::log_init("hello");                  // lines in the application's log
+  nbt::app::Lifecycle lifecycle;
+  if (int rc = lifecycle.init(argc, argv)) return rc;
+  nbt::app::log_install_crash_handlers();
+
+  nbt::app::VideoEgl video;                     // the head unit's panel, or an X11 window
+  if (lifecycle.is_user_mode() && !video.init(lifecycle.surface_id())) return 1;
+  if (!lifecycle.send_ready()) return 1;        // the manager shows the application
+
+  nbt::controller::Input controller;
+  while (!lifecycle.stopping()) {
+    controller.poll(lifecycle.controller_fd(), &on_controller, NULL);
+    draw();
+    video.swap();
+    bool settings_changed = false;              // heartbeat, status line, live settings
+    lifecycle.tick(nbt::app::monotonic_ms(), "Running", &settings_changed);
+    if (settings_changed) apply(lifecycle.settings());
+  }
+  video.shutdown();
+  lifecycle.close_fds();
+  return 0;
+}
+```
 
 ## Build and test
 

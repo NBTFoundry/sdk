@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
-# Applications without the QNX SDP (docs/native-apps.md): the runtime, the
-# module runtime library, the SDK built for modules and guests ("mod"
-# libraries) and the test payloads. Included from the top Makefile; guests,
+# Applications without the QNX SDP (docs/native-apps.md): the module runtime
+# library, the SDK built for modules and guests ("mod" libraries) and the test
+# payloads, with the NBT toolchain. Included from the top Makefile; guests,
 # the runner and the VM tests follow in guest/guest.mk, runner/runner.mk and
 # tools/qnx65-vm/vm.mk.
 
@@ -16,18 +16,15 @@ MODULE_RT := $(LIB_DIR)/libnbt-module-rt.a
 MODULE_OBJ := $(OBJ_DIR)/module
 MODULE_CFLAGS := $(NBT_MOD_CFLAGS) -O2 -std=gnu11 $(WARN) -Imodule/runtime
 MODULE_CXXFLAGS := $(NBT_MOD_CXXFLAGS) -O2 -std=c++17 $(WARN) -Imodule/runtime
-CRT_BUILTINS_DIR := third_party/llvm-project/compiler-rt/lib/builtins
 
-# --- The runtime: picolibc, compiler-rt, libc++ (one script, one run) ---
-.PHONY: module-runtime
-module-runtime: $(MODULE_RUNTIME_LIBS)
-$(MODULE_RUNTIME_LIBS) &:
-	LLVM_BIN=$(NBT_LLVM_BIN) MODULE_LD=$(NBT_MOD_LD) MODULE_UNALIGNED=$(NBT_MOD_UNALIGNED) \
-		module/build-runtime.sh $(NBT_MOD_RUNTIME)
+# --- The NBT toolchain release this SDK uses, into toolchain/ ---
+.PHONY: toolchain
+toolchain:
+	$(PYTHON) tools/get_toolchain.py $(NBT_TOOLCHAIN_VERSION) toolchain
 
-# --- The module runtime library: entry, system calls, threads, TLS, memcpy ---
-MODULE_RT_OBJS := $(patsubst module/runtime/%.c,$(MODULE_OBJ)/rt/%.o,$(wildcard module/runtime/*.c)) \
-	$(MODULE_OBJ)/rt/emutls.o
+# --- The module runtime library: entry, system calls, threads, memcpy ---
+# (the C library the toolchain's headers declare, over the host table)
+MODULE_RT_OBJS := $(patsubst module/runtime/%.c,$(MODULE_OBJ)/rt/%.o,$(wildcard module/runtime/*.c))
 
 $(MODULE_OBJ)/rt/%.o: module/runtime/%.c $(MODULE_LIBC)
 	@mkdir -p $(dir $@)
@@ -35,11 +32,6 @@ $(MODULE_OBJ)/rt/%.o: module/runtime/%.c $(MODULE_LIBC)
 
 # memcpy's loops must stay loops, not become memcpy calls.
 $(MODULE_OBJ)/rt/memcpy.o: MODULE_CFLAGS += -fno-builtin
-
-# compiler-rt's emulated TLS, over the module's own pthread keys.
-$(MODULE_OBJ)/rt/emutls.o: $(CRT_BUILTINS_DIR)/emutls.c $(MODULE_LIBC)
-	@mkdir -p $(dir $@)
-	$(NBT_MOD_CC) $(MODULE_CFLAGS) -Wno-unused-parameter -I$(CRT_BUILTINS_DIR) -c $< -o $@
 
 $(MODULE_RT): $(MODULE_RT_OBJS)
 	@mkdir -p $(dir $@)

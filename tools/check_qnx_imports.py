@@ -99,7 +99,7 @@ def check(elf, sysroot, car_libs, binary):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sysroot", required=True, help="QNX 6.5.0 SP1 target directory (…/target/qnx6)")
-    parser.add_argument("--readelf", default="arm-none-eabi-readelf")
+    parser.add_argument("--readelf", default="llvm-readelf")
     parser.add_argument("--car-lib", action="append", default=[],
                         help="NAME:PREFIX[,PREFIX]: a library the car has but the sysroot lacks")
     parser.add_argument("binaries", nargs="+")

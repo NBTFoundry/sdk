@@ -4,8 +4,9 @@
 (include/nbt/host_abi.h). Both kinds:
 
   - ELF32 ARM, EABI5, soft-float base calling convention, int-size enums,
-    4-byte wchar_t; no program interpreter, no TLS segment, no executable
-    stack; no VFP/NEON code in Thumb state; an NBT ABI note.
+    4-byte wchar_t (in every input, with --map); no program interpreter, no
+    TLS segment, no executable stack; no VFP/NEON code in Thumb state; an NBT
+    ABI note.
 
 A module (mode A, ET_DYN, loaded by the runner):
   - no DT_NEEDED, no text relocations, no loader-run constructors;
@@ -17,7 +18,10 @@ A guest (mode B, ET_EXEC, a separate process; may carry GPL code):
   - loads at 0x100000 or above, page-aligned segments;
   - no QNX library code (none of its symbols); note mode 2.
 
-Usage: check_module.py [--readelf PATH] [--objdump PATH] payload...
+With --map (the payload's LLD link map), also the licence gate: GPL/LGPL
+inputs only in a guest.
+
+Usage: check_module.py [--readelf PATH] [--objdump PATH] [--map PATH --app-license SPDX] payload...
 """
 import argparse
 import re
@@ -56,7 +60,33 @@ QNX_SYMBOLS = {"_init_libc", "__get_errno_ptr", "_cpupage_ptr", "_syspage_ptr", 
                "MsgSendv", "MsgSend", "ThreadCreate", "_Stderr", "_Stdout", "_Stoul", "__SysCpupageGet"}
 
 
-def check(tool, path, objdump=None):
+# ARM build attribute values (llvm-readelf -A) that break the payload ABI.
+BAD_ATTRIBUTES = {
+    ("ABI_VFP_args", "1"): "passes floats in VFP registers; build with -mfloat-abi=softfp",
+    ("ABI_VFP_args", "2"): "uses a toolchain-specific float calling convention",
+    ("ABI_enum_size", "1"): "has short enums; build with -fno-short-enums",
+    ("ABI_PCS_wchar_t", "2"): "has a 2-byte wchar_t",
+}
+
+
+def attribute_errors(tool, paths):
+    """Objects and archive members among paths built for another ABI. LLD
+    keeps only one input's attributes in its output, so a payload's inputs
+    are read, not the payload."""
+    parts = re.split(r"^File: (.+)$", readelf(tool, "-A", *paths), flags=re.M)
+    named = zip(parts[1::2], parts[2::2]) if len(parts) > 1 else [(paths[0], parts[0])]
+    errors = []
+    for name, body in named:
+        for value, tag in re.findall(r"Value: (\S+)\s+TagName: (\w+)", body):
+            problem = BAD_ATTRIBUTES.get((tag, value))
+            if problem:
+                errors.append("%s %s" % (name.strip(), problem))
+    return errors
+
+
+def check(tool, path, objdump=None, inputs=None):
+    """Errors in the payload at path; inputs (from its link map) are what it
+    was linked from."""
     errors = []
 
     header = readelf(tool, "-h", path)
@@ -74,13 +104,7 @@ def check(tool, path, objdump=None):
     if value & 0x400:
         errors.append("hard-float ABI flag set")
 
-    attrs = readelf(tool, "-A", path)
-    if "Tag_ABI_VFP_args" in attrs:
-        errors.append("passes floats in VFP registers (Tag_ABI_VFP_args); build with -mfloat-abi=softfp")
-    if not re.search(r"Tag_ABI_enum_size: int", attrs):
-        errors.append("enums are not int-size; build with -fno-short-enums")
-    if not re.search(r"Tag_ABI_PCS_wchar_t: 4", attrs):
-        errors.append("wchar_t is not 4 bytes")
+    errors += attribute_errors(tool, inputs or [path])
 
     segments = readelf(tool, "-l", path)
     for kind in ("INTERP", "TLS"):
@@ -180,7 +204,6 @@ def check_module(tool, path):
 # Licences of what the SDK puts into every payload (by archive name).
 KNOWN_INPUTS = [
     (re.compile(r"libnbt-[a-z0-9-]+\.a$"), "MPL-2.0"),
-    (re.compile(r"libnbt-module-rt\.a$"), "MPL-2.0 AND Apache-2.0 WITH LLVM-exception"),
     (re.compile(r"/picolibc/lib/libc\.a$"), "BSD-3-Clause"),
     (re.compile(r"lib(c\+\+|c\+\+abi|unwind|clang_rt\.builtins)\.a$"), "Apache-2.0 WITH LLVM-exception"),
     (re.compile(r"/obj/guest/[a-z]+\.o$"), "MPL-2.0"),
@@ -189,22 +212,24 @@ COPYLEFT = re.compile(r"\b(A?GPL|LGPL)-")
 
 
 def linked_inputs(map_path):
-    """Archives and objects the linker took, from a GNU ld or LLD map."""
+    """Archives and objects the linker took, from an LLD map: input lines end
+    in "path:(section)" or "archive(member):(section)"."""
     inputs = set()
     with open(map_path, errors="replace") as f:
         for line in f:
-            for m in re.finditer(r"(/[^\s()]+\.(?:a|o|obj))(?:\(|\s|$)", line):
+            m = re.search(r"\s(\S+?\.(?:a|o|obj))(?:\([^()]*\))?:\(", line)
+            if m:
                 inputs.add(m.group(1))
     return sorted(inputs)
 
 
-def check_licenses(path, map_path, app_license):
+def check_licenses(path, inputs, app_license):
     """The QNX licence forbids linking QNX code with GPL code, and statically
     with LGPL code: a module (in the runner's process) must have none; a guest
     (its own process, no QNX code) may."""
     guest = path.endswith(".guest")
     errors = []
-    for inp in linked_inputs(map_path):
+    for inp in inputs:
         lic = next((l for pattern, l in KNOWN_INPUTS if pattern.search(inp)), app_license)
         if lic is None:
             errors.append("no licence known for %s (pass --app-license)" % inp)
@@ -219,15 +244,18 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--readelf", default="readelf")
     parser.add_argument("--objdump", help="llvm-objdump, for the Thumb VFP check")
-    parser.add_argument("--map", help="the link map (ld -Map), for the licence gate")
+    parser.add_argument("--map", help="the link map (ld.lld -Map): the inputs' licences and ABI")
     parser.add_argument("--app-license", help="SPDX expression of the application's own objects")
     parser.add_argument("modules", nargs="+")
     args = parser.parse_args()
     status = 0
+    inputs = linked_inputs(args.map) if args.map else None
+    if args.map and not inputs:
+        sys.exit("%s: no inputs found (not an LLD map?)" % args.map)
     for path in args.modules:
-        errors, kind, note = check(args.readelf, path, args.objdump)
-        if args.map:
-            errors += check_licenses(path, args.map, args.app_license)
+        errors, kind, note = check(args.readelf, path, args.objdump, inputs)
+        if inputs:
+            errors += check_licenses(path, inputs, args.app_license)
         if errors:
             status = 1
             for e in errors:

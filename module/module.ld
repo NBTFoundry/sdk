@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-/* Augments the linker's default shared-object script: constructors and
- * destructors go to private sections that module/runtime/crt.c runs, so the
- * QNX loader sees no DT_INIT_ARRAY or DT_FINI_ARRAY to run on its own. */
-SECTIONS
+/* For LLD, the NBT toolchain's linker, on top of its built-in layout:
+ * constructors and destructors go to private sections that
+ * module/runtime/crt.c runs, so the QNX loader sees no DT_INIT_ARRAY or
+ * DT_FINI_ARRAY to run on its own. OVERWRITE_SECTIONS places them where LLD
+ * puts any section of their type, with the RELRO data; no anchor needed. */
+OVERWRITE_SECTIONS
 {
   .nbt_preinit_array : {
     PROVIDE_HIDDEN(__nbt_preinit_array_start = .);
@@ -25,4 +27,3 @@ SECTIONS
     PROVIDE_HIDDEN(__nbt_fini_array_end = .);
   }
 }
-INSERT BEFORE .init_array;

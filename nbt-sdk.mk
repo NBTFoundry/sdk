@@ -44,7 +44,7 @@ NBT_SDK_QNX_LDFLAGS := -Wl,--dynamic-list,$(NBT_SDK_ROOT)/qnx/exports.list
 NBT_SDK_QNX_LDLIBS := -lscreen -lEGL -lGLESv2 -lsocket -lm
 
 NBT_SDK_MAKE = $(MAKE) --no-print-directory -C $(NBT_SDK_ROOT) BUILD_DIR=$(NBT_SDK_BUILD_DIR) \
-	QNX_ENV="$(QNX_ENV)" QNX_SCREEN_LIBDIR="$(QNX_SCREEN_LIBDIR)" NBT_MOD_RUNTIME_DIR="$(NBT_MOD_RUNTIME_DIR)" \
+	QNX_ENV="$(QNX_ENV)" QNX_SCREEN_LIBDIR="$(QNX_SCREEN_LIBDIR)" NBT_TOOLCHAIN="$(NBT_TOOLCHAIN)" \
 	NBT_MOD_UNALIGNED="$(NBT_MOD_UNALIGNED)"
 
 .PHONY: nbt-sdk-host nbt-sdk-asan nbt-sdk-qnx
@@ -69,8 +69,6 @@ $(NBT_SDK_QNX_LIBS) $(NBT_SDK_FRONT_QNX_LIBS): nbt-sdk-qnx ;
 #   	$(call nbt_guest_link,$@,$(OBJS),<SPDX licence of OBJS>)
 NBT_MOD_ROOT := $(NBT_SDK_ROOT)
 NBT_MOD_BUILD := $(abspath $(NBT_SDK_BUILD_DIR))
-# The runtime does not depend on the application: share the SDK's own build.
-NBT_MOD_RUNTIME_DIR ?= $(NBT_SDK_ROOT)/build
 include $(NBT_SDK_ROOT)/module/flags.mk
 NBT_SDK_MOD_DEPS = $(NBT_MOD_LINK_DEPS) $(NBT_GUEST_RT_OBJS)
 
@@ -86,6 +84,7 @@ nbt-sdk-runner:
 $(NBT_SDK_RUNNER): nbt-sdk-runner ;
 nbt-sdk-mod:
 	+@$(NBT_SDK_MAKE) libs-mod guest-runtime
-$(NBT_SDK_MOD_DEPS): nbt-sdk-mod ;
+# (the toolchain's own files are not the SDK's to make: module/flags.mk)
+$(filter-out $(NBT_MOD_SYSROOT)/%,$(NBT_SDK_MOD_DEPS)): nbt-sdk-mod ;
 
 .DEFAULT_GOAL := $(nbt_sdk_default_goal)

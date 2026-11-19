@@ -39,7 +39,11 @@ app.guest: $(OBJS) $(NBT_SDK_MOD_DEPS)       # a guest
 
 Worked examples: the `module` and `guest` targets of the NBTFoundry application repositories.
 
-Requirements: `clang` 17 (`NBT_LLVM_BIN`), `arm-none-eabi-ld` (or `ld.lld`), `meson`, `cmake` and `ninja`. The first build compiles the runtime, picolibc, compiler-rt and libc++, into `sdk/build/module-runtime`; every application shares it.
+Requirements: GNU make 4.3 or newer, Python 3, and the NBT toolchain (NBTFoundry/toolchains) for Linux x86-64, macOS arm64 or Windows x86-64 (MSYS2 make). The toolchain is Clang and LLD plus the runtime every payload links: picolibc, compiler-rt and libc++, and the C library headers that `module/runtime` implements.
+- `make toolchain` installs the release this SDK is pinned to (`NBT_TOOLCHAIN_VERSION` in `module/flags.mk`) in `sdk/toolchain/`, where every application finds it. It downloads with the GitHub CLI (`gh auth login` first).
+- Or unpack a release anywhere and set `NBT_TOOLCHAIN` to its directory.
+
+Payloads statically contain picolibc, whose BSD-style licences require shipping its notices with them: `share/licenses/picolibc/` in the toolchain. The SDK's own code is MPL-2.0: say where its source is.
 
 What a module or guest cannot do:
 - start processes or wait on descriptors: `fork`, `exec*`, `system` and `poll` fail with `ENOSYS`;

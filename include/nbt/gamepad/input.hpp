@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #ifndef NBT_GAMEPAD_INPUT_HPP
 #define NBT_GAMEPAD_INPUT_HPP
 #include "nbt/gamepad_wire.h"

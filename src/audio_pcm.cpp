@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "nbt/app/audio_pcm.hpp"
 
 #include <dlfcn.h>

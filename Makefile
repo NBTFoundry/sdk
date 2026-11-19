@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 SHELL := /bin/bash
 
 BUILD_DIR ?= build

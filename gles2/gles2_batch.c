@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #define NBT_GLES2_IMPL
 #include "nbt/gles2/gles2_compat.h"
 #include "nbt/gles2/gles2_matrix.h"

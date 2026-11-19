@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "nbt/gles2/gles2_matrix.h"
 
 #include <math.h>

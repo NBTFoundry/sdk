@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "nbt/controller/input.hpp"
 #include <errno.h>
 #include <string.h>

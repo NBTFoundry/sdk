@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Drives tests/smoke_app.cpp through the NBT Manager bridge contract: the
 ready and lease descriptors, status, live settings, controller and gamepad
 datagrams, signals, the crash handler and (with Xvfb) the host window."""

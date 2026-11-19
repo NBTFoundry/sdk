@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #ifndef NBT_GLES2_SHADERS_H
 #define NBT_GLES2_SHADERS_H
 

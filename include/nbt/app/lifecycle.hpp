@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #ifndef NBT_APP_LIFECYCLE_HPP
 #define NBT_APP_LIFECYCLE_HPP
 

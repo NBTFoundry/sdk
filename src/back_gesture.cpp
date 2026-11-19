@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "nbt/app/back_gesture.hpp"
 
 namespace nbt {

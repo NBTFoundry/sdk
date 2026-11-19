@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
@@ -6,6 +7,8 @@
 </p>
 
 <h1 align="center">NBT App SDK</h1>
+
+> **Warning: installing or modifying this software can brick your head unit. Recovery may require professional service or replacement, at your expense. Provided AS IS; use at your own risk, subject to applicable law.** [Read the risk and liability disclaimer](DISCLAIMER.md).
 
 <p align="center">
   <b>Write an application for the iDrive screen</b><br>
@@ -142,3 +145,13 @@ build/app-qnx: $(APP_QNX_OBJS) $(NBT_SDK_QNX_LIBS)
 - One `Lifecycle` and one open `AudioPcm` per process.
 - Nothing specific to one application: `make check-generic` runs with `make test`.
 - The four bridge readers are copies of the manager's (see [READERS](READERS)).
+
+## License
+
+Copyright (c) 2026 Fabien Poussin. Original code, tests, build scripts and documentation are licensed under **MPL-2.0**; see [LICENSE](LICENSE).
+
+Original NBTFoundry logos, artwork and screenshots are under **MPL-2.0**, including copies in other NBTFoundry repositories. Third-party code, fonts, game data and their notices retain their own terms. Copyright permission for artwork does not grant trademark rights or imply endorsement by BMW AG or id Software.
+
+The SDK is not marked Incompatible With Secondary Licenses. MPL section 3.3 permits the additional GPL licensing required when it is combined with GPL-covered applications.
+
+See [legal/README.md](legal/README.md) for third-party license notices.

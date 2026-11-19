@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 # Build and link the NBT App SDK from an application's Makefile:
 #
 #   NBT_SDK_DIR ?= ../sdk

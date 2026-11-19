@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: MPL-2.0 -->
 # NBT App SDK API
 
 Everything is in namespace `nbt::app` unless noted, under `include/nbt/`. The

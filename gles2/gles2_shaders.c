@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "gles2_shaders.h"
 
 #include <stdio.h>

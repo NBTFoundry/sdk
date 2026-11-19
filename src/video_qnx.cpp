@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "video_qnx.hpp"
 
 #ifdef __QNXNTO__

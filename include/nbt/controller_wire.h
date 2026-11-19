@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #ifndef NBT_CONTROLLER_WIRE_H
 #define NBT_CONTROLLER_WIRE_H
 /* Bridge capability `controller`: the iDrive controller and the favourite keys

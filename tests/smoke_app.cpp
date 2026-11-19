@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 /* A minimal application on the SDK, driven by tests/test_smoke.py. It prints
  * one event per line on stdout:
  *

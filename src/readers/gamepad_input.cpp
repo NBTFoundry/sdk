@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MPL-2.0
 #include "nbt/gamepad/input.hpp"
 #include <errno.h>
 #include <string.h>

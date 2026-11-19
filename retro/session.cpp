@@ -20,6 +20,7 @@ namespace retro {
 namespace {
 
 const uint64_t kSramCheckMs = 10000;
+const size_t kMinContent = 0x20000; /* past a 64 KiB HiROM header and then some */
 
 uint64_t fnv1a(const void* data, size_t size) {
   const unsigned char* p = static_cast<const unsigned char*>(data);
@@ -83,6 +84,17 @@ bool load_game(Host& h, size_t index) {
   if (!h.info.need_fullpath) {
     size_t size = 0;
     h.content = h.files.read(index, h.config.max_file_bytes, &size);
+    /* Cores probe headers at fixed offsets whatever the size (Snes9x reads
+     * 0xffc0 of every game): a small file gets zeroes after it. */
+    if (h.content && size < kMinContent) {
+      void* padded = realloc(h.content, kMinContent);
+      if (padded) {
+        memset(static_cast<char*>(padded) + size, 0, kMinContent - size);
+      } else {
+        free(h.content);
+      }
+      h.content = padded;
+    }
     if (!h.content) {
       notice(h, app::monotonic_ms(), "Cannot read %s", entry.name);
       return false;

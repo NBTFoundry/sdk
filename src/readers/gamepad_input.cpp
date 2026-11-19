@@ -35,10 +35,11 @@ bool Input::feed(const uint8_t *data, size_t size, uint64_t now) {
         armed_ = true;
     }
     state_ = next;
-    if (!armed_) {
-        const uint8_t connected = state_.connected;
+    if (!armed_) { // controls count once seen neutral; which pad it is, at once
+        const uint8_t connected = state_.connected, family = state_.family;
         memset(&state_, 0, sizeof(state_));
         state_.connected = connected;
+        state_.family = family;
     }
     return true;
 }

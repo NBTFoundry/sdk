@@ -28,7 +28,7 @@ may come later.
 
 Part of [NBTFoundry](https://github.com/NBTFoundry):
 [manager](https://github.com/NBTFoundry/manager) (runs the applications) ·
-[doom](https://github.com/NBTFoundry/doom) (an application on this SDK) ·
+[nf-doom](https://github.com/NBTFoundry/nf-doom) (an application on this SDK) ·
 [mobile-app](https://github.com/NBTFoundry/mobile-app) (phone app) ·
 [installer](https://github.com/NBTFoundry/installer) (desktop installer)
 
@@ -51,6 +51,8 @@ flowchart LR
 | `libnbt-sdk` | `Lifecycle` (bridge), `Settings`, log and crash lines, `VideoEgl`, `AudioPcm` and `AudioRoute`, the controller and gamepad readers, `InputMixer`, `BackGesture` |
 | `libnbt-audio-mixer` | `AudioMixer`: 16 sample channels over a music renderer |
 | `libnbt-gles2` | A GL1-to-GLES2 shim for porting fixed-function OpenGL code |
+| `libnbt-frontend` | A front end: frames scaled to the panel, an audio queue, controls laid out per pad family, an overlay, menus, save files |
+| `libnbt-retro` | A libretro host: one statically linked core as an application, with a game list, saves, states and a pause menu |
 
 The API is described in [docs/api.md](docs/api.md); the bridge contract it
 implements is `NBTFoundry/manager: docs/app-bridge.md`.
@@ -92,9 +94,10 @@ int main(int argc, char** argv) {
 ## Build and test
 
 Linux host (gcc, Python 3, X11, EGL and GLESv2 development files; Xvfb for the
-window test):
+window tests). Third-party code is in submodules (`third_party/`):
 
 ```sh
+git submodule update --init
 make -j"$(nproc)" host               # libraries, unit tests, smoke app
 make test                            # unit tests, smoke tests, neutrality check
 make test-asan                       # the same under AddressSanitizer/UBSan
@@ -144,6 +147,8 @@ build/app-qnx: $(APP_QNX_OBJS) $(NBT_SDK_QNX_LIBS)
 - Bounded buffers; no allocation on the input and settings paths.
 - One `Lifecycle` and one open `AudioPcm` per process.
 - Nothing specific to one application: `make check-generic` runs with `make test`.
+- Third-party code in git submodules under `third_party/` (`libretro.h` from
+  libretro-common, the 8x8 font from font8x8); notices in `legal/NOTICE.txt`.
 - The four bridge readers are copies of the manager's (see [READERS](READERS)).
 
 ## License

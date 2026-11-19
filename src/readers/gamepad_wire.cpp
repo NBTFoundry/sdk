@@ -19,7 +19,9 @@ int16_t axis(uint32_t v) {
 }
 bool valid(const nbt_gamepad_wire_state &s) {
     return s.connected <= 1 && !(s.buttons & ~NBT_GAMEPAD_BUTTONS) &&
-           (s.connected || !(s.buttons || s.lx || s.ly || s.rx || s.ry || s.lt || s.rt));
+           s.family <= NBT_GAMEPAD_FAMILY_MAX &&
+           (s.connected ||
+            !(s.buttons || s.lx || s.ly || s.rx || s.ry || s.lt || s.rt || s.family));
 }
 } // namespace
 int nbt_gamepad_wire_encode(const nbt_gamepad_wire_state *s, uint8_t *p, size_t n) {
@@ -29,6 +31,7 @@ int nbt_gamepad_wire_encode(const nbt_gamepad_wire_state *s, uint8_t *p, size_t 
     memset(p, 0, NBT_GAMEPAD_WIRE_SIZE);
     p[0] = p[1] = 1;
     p[2] = s->connected;
+    p[3] = s->family;
     put(p + 4, s->sequence, 4);
     put(p + 8, s->buttons, 4);
     put(p + 12, static_cast<uint16_t>(s->lx), 2);
@@ -40,12 +43,13 @@ int nbt_gamepad_wire_encode(const nbt_gamepad_wire_state *s, uint8_t *p, size_t 
     return NBT_GAMEPAD_WIRE_SIZE;
 }
 int nbt_gamepad_wire_decode(const uint8_t *p, size_t n, nbt_gamepad_wire_state *out) {
-    if (!p || !out || n != NBT_GAMEPAD_WIRE_SIZE || p[0] != 1 || p[1] != 1 || p[3]) {
+    if (!p || !out || n != NBT_GAMEPAD_WIRE_SIZE || p[0] != 1 || p[1] != 1) {
         return -1;
     }
     nbt_gamepad_wire_state s;
     memset(&s, 0, sizeof(s));
     s.connected = p[2];
+    s.family = p[3];
     s.sequence = get(p + 4, 4);
     s.buttons = get(p + 8, 4);
     s.lx = axis(get(p + 12, 2));

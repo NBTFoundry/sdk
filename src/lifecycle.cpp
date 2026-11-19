@@ -158,6 +158,11 @@ const char* Lifecycle::data_dir() const {
   return dir ? dir : "";
 }
 
+const char* Lifecycle::files_dir() const {
+  const char* dir = getenv("NBT_FILES_DIR");
+  return dir ? dir : "";
+}
+
 void Lifecycle::close_fds() {
   close_fd(&gamepad_fd_);
   close_fd(&controller_fd_);

@@ -24,11 +24,20 @@ extern "C" {
 #define NBT_GAMEPAD_LEFT (1u << 13)
 #define NBT_GAMEPAD_RIGHT (1u << 14)
 #define NBT_GAMEPAD_BUTTONS 0x7fffu
+/* The pad's family (byte 3, bridge 1.5): 0 when unknown or disconnected, and
+ * always 0 for applications declaring a bridge older than 1.5, whose readers
+ * reject anything else there. */
+#define NBT_GAMEPAD_FAMILY_UNKNOWN 0u
+#define NBT_GAMEPAD_FAMILY_XBOX 1u
+#define NBT_GAMEPAD_FAMILY_DUALSHOCK4 2u
+#define NBT_GAMEPAD_FAMILY_DUALSENSE 3u
+#define NBT_GAMEPAD_FAMILY_MAX 3u
 typedef struct {
     uint32_t sequence, buttons;
     int16_t lx, ly, rx, ry; /* positive right/up, -32768..32767 */
     uint16_t lt, rt;        /* 0..65535 */
     uint8_t connected;
+    uint8_t family; /* NBT_GAMEPAD_FAMILY_*; 0 unless connected */
 } nbt_gamepad_wire_state;
 int nbt_gamepad_wire_encode(const nbt_gamepad_wire_state *state, uint8_t *out, size_t size);
 int nbt_gamepad_wire_decode(const uint8_t *data, size_t size, nbt_gamepad_wire_state *out);

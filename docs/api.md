@@ -20,8 +20,12 @@ flowchart LR
 | `libnbt-sdk` | everything in `src/` | libc, pthread, EGL, GLESv2; X11 on a host, Screen on QNX |
 | `libnbt-audio-mixer` | `AudioMixer` | `libnbt-sdk` |
 | `libnbt-gles2` | the GL1-to-GLES2 shim | GLESv2 |
+| `libnbt-frontend` | frame drawing, audio queue, pad profiles, overlay, menus, save files | `libnbt-sdk`, GLESv2 |
+| `libnbt-retro` | the libretro host | `libnbt-frontend`, a libretro core |
 
-Link order: `libnbt-audio-mixer`, `libnbt-gles2`, `libnbt-sdk`. On QNX, link
+Link order: `libnbt-retro`, `libnbt-frontend`, `libnbt-audio-mixer`,
+`libnbt-gles2`, `libnbt-sdk` (`NBT_SDK_FRONT_*_LIBS`; a core's objects before
+them). On QNX, link
 with `-Wl,--dynamic-list,qnx/exports.list` so that `kdMain` is exported:
 libKD looks it up when the SDK opens it at run time.
 
@@ -173,6 +177,57 @@ Include it instead of
 `gles2_batch_shutdown()` before it goes. `gles2_set_viewport_mapping()` and
 `gles2_set_gamma()` control scaling and gamma. Errors are logged as
 `[nbt-gles2] ...`.
+
+## Files — `nbt/app/files.hpp`
+
+An application granted `files` (bridge 1.5) reads the files the user sent
+from the phone or imported from a USB stick in `Lifecycle::files_dir()`
+(`NBT_FILES_DIR`); the folder is NBT Manager's, the application only reads
+it. `FileList::load(dir, extensions)` lists it: regular files with names the
+manager stores, the given extensions in any case, sorted without regard to
+case, at most 512. `read(i, max, &size)` reads one into memory without
+following a link. Saves and the like belong in `data_dir()`.
+
+## Front end — `libnbt-frontend`, `nbt/frontend/`
+
+For applications that draw a software frame (an emulator) or want the same
+menus, notices and controls over their own renderer. Independent of
+libretro.
+
+| Header | API |
+| --- | --- |
+| `frame_video.hpp` | `FrameVideo`: uploads an RGB565, XRGB8888 or 0RGB1555 frame and draws it at its display aspect, an integer scale or stretched; filters sharp (crisp pixels with smoothed edges), smooth or nearest. `place()` computes the rectangle. |
+| `audio_queue.hpp` | `AudioQueue`: frames from the loop to `AudioPcm`'s thread, resampled to the device's rate, the ratio nudged (at most 0.5%) to hold its target fill. `render_callback` is an `AudioRenderFn`. |
+| `pad_profiles.hpp` | `PadMapper`: the application's actions from a `PadProfile` per pad family (byte 3 of the gamepad state, bridge 1.5), a `ControllerProfile` (keys, knob detents as pulses, BACK tap, hold for the menu, long hold to quit) and a `KeyboardProfile`. An action is held while any source holds it; changes reach an `InputSink`. The profile follows the pad plugged in. |
+| `hints.hpp` | Inputs and buttons named as printed: "Cross", "Create", "Push"... |
+| `overlay.hpp` | `Overlay`: boxes and 8x8 text over the window's frame, restoring the GL state it changes. |
+| `menu.hpp` | `Menu`: a list with a title and notes, drawn with the overlay; `MenuInput` turns pad, controller and keyboard into up, down, select and back. |
+| `save_file.hpp` | Whole-file writes through a synced `.next` and a rename; bounded reads that do not follow links. |
+
+Lay out each pad family's buttons by where they sit, so a game plays as on
+its original controller: the south button is the bottom one on every pad.
+
+## Libretro host — `libnbt-retro`, `nbt/retro/`
+
+`retro::run(argc, argv, HostConfig)` runs one statically linked libretro
+core as an NBT Manager application: the bridge's lifecycle (a health check
+only reports ready), the window, sound, the controls by pad family, a game
+list from the files folder (the last game focused), battery saves
+(`<data>/saves/<game>.srm`, written when changed, at most every 10 s, and on
+leaving), four save-state slots (`<data>/states/`) and a pause menu (Resume,
+Save state, Load state, Slot, Reset, Choose another game, Quit). The menu
+opens with a pad's Guide button or its View and Menu together, the iDrive
+MENU key or a BACK hold; a long BACK hold quits.
+
+The front end's own settings: `aspect` (`4-3`, `pixel`, `full`), `filter`
+(`sharp`, `smooth`, `nearest`), `sound`, `show_fps`, `debug_log`.
+`VariableMap` entries feed core variables from other settings
+(`CoreOptions`); a value the core does not list is never given to it. Cores
+declare plain variables (`RETRO_ENVIRONMENT_SET_VARIABLES`): the host does not
+answer `GET_CORE_OPTIONS_VERSION`. Software rendering only.
+
+`tests/retro_app.cpp` is a complete small emulator application (with
+`tests/fake_core.c` for a core).
 
 ## Helpers
 

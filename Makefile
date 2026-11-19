@@ -27,7 +27,7 @@ QNX_STRIP ?= ntoarmv7-strip
 # Only for check-readers: the manager tree the reader copies come from.
 NBT_MGR_DIR ?= ../manager
 
-INC := -Iinclude -Isrc
+INC := -Iinclude -Isrc -Ithird_party/libretro-common/include -Ithird_party/font8x8
 WARN := -Wall -Wextra -Wno-unused-parameter
 HOST_CFLAGS := -std=gnu99 -O2 $(WARN) $(CFLAGS)
 HOST_CXXFLAGS := -std=c++11 -O2 $(WARN) -fno-exceptions -fno-rtti $(CXXFLAGS)
@@ -58,11 +58,15 @@ READER_FILES := \
 SDK_SRC := $(sort $(wildcard src/*.cpp src/readers/*.cpp))
 MIXER_SRC := mixer/audio_mixer.cpp
 GLES2_SRC := $(sort $(wildcard gles2/*.c))
+FRONTEND_SRC := $(sort $(wildcard frontend/*.cpp frontend/*.c))
+RETRO_SRC := $(sort $(wildcard retro/*.cpp))
 
 objs = $(patsubst %.cpp,$(OBJ_DIR)/$(1)/%.o,$(filter %.cpp,$(2))) \
 	$(patsubst %.c,$(OBJ_DIR)/$(1)/%.o,$(filter %.c,$(2)))
 libs = $(LIB_DIR)/libnbt-audio-mixer-$(1).a $(LIB_DIR)/libnbt-gles2-$(1).a \
 	$(LIB_DIR)/libnbt-sdk-$(1).a
+# The front end and the libretro host, before the libraries above (link order).
+front_libs = $(LIB_DIR)/libnbt-retro-$(1).a $(LIB_DIR)/libnbt-frontend-$(1).a
 
 HOST_LIBS := $(call libs,host)
 ASAN_LIBS := $(call libs,asan)
@@ -73,16 +77,19 @@ UNIT_ASAN := $(BUILD_DIR)/sdk-unit-asan
 SMOKE := $(BUILD_DIR)/nbt-sdk-smoke
 SMOKE_ASAN := $(BUILD_DIR)/nbt-sdk-smoke-asan
 SMOKE_QNX := $(BUILD_DIR)/nbt-sdk-smoke-qnx
+FRONTEND_TEST := $(BUILD_DIR)/sdk-frontend-test
+FRONTEND_ASAN := $(BUILD_DIR)/sdk-frontend-asan
+RETRO_APP := $(BUILD_DIR)/nbt-retro-fake
 
 .PHONY: all host libs-host libs-asan libs-qnx test test-asan check-static-init check-generic \
 	check-readers qnx qnx-check qnx-env format clean
 
 all: host
 
-host: libs-host $(UNIT_TEST) $(SMOKE)
-libs-host: $(HOST_LIBS)
-libs-asan: $(ASAN_LIBS)
-libs-qnx: $(QNX_LIBS)
+host: libs-host $(UNIT_TEST) $(SMOKE) $(FRONTEND_TEST) $(RETRO_APP)
+libs-host: $(HOST_LIBS) $(call front_libs,host)
+libs-asan: $(ASAN_LIBS) $(call front_libs,asan)
+libs-qnx: $(QNX_LIBS) $(call front_libs,qnx)
 
 # --- Objects ---
 $(OBJ_DIR)/host/%.o: %.cpp
@@ -119,9 +126,13 @@ endef
 $(eval $(call host_lib,nbt-sdk,host,$(SDK_SRC)))
 $(eval $(call host_lib,nbt-audio-mixer,host,$(MIXER_SRC)))
 $(eval $(call host_lib,nbt-gles2,host,$(GLES2_SRC)))
+$(eval $(call host_lib,nbt-frontend,host,$(FRONTEND_SRC)))
+$(eval $(call host_lib,nbt-retro,host,$(RETRO_SRC)))
 $(eval $(call host_lib,nbt-sdk,asan,$(SDK_SRC)))
 $(eval $(call host_lib,nbt-audio-mixer,asan,$(MIXER_SRC)))
 $(eval $(call host_lib,nbt-gles2,asan,$(GLES2_SRC)))
+$(eval $(call host_lib,nbt-frontend,asan,$(FRONTEND_SRC)))
+$(eval $(call host_lib,nbt-retro,asan,$(RETRO_SRC)))
 
 define qnx_lib
 $(LIB_DIR)/lib$(1)-qnx.a: $(call objs,qnx,$(2)) | qnx-env
@@ -132,12 +143,25 @@ endef
 $(eval $(call qnx_lib,nbt-sdk,$(SDK_SRC)))
 $(eval $(call qnx_lib,nbt-audio-mixer,$(MIXER_SRC)))
 $(eval $(call qnx_lib,nbt-gles2,$(GLES2_SRC)))
+$(eval $(call qnx_lib,nbt-frontend,$(FRONTEND_SRC)))
+$(eval $(call qnx_lib,nbt-retro,$(RETRO_SRC)))
 
 # --- Host tests ---
 $(UNIT_TEST): $(OBJ_DIR)/host/tests/sdk_test.o $(HOST_LIBS)
 	$(CXX) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
 
 $(SMOKE): $(OBJ_DIR)/host/tests/smoke_app.o $(HOST_LIBS)
+	$(CXX) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
+
+$(FRONTEND_TEST): $(OBJ_DIR)/host/tests/frontend_test.o $(call front_libs,host) $(HOST_LIBS)
+	$(CXX) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
+
+$(FRONTEND_ASAN): $(OBJ_DIR)/asan/tests/frontend_test.o $(call front_libs,asan) $(ASAN_LIBS)
+	$(CXX) $(ASAN_FLAGS) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
+
+# The libretro host with a fake core (tests/test_retro.py).
+$(RETRO_APP): $(OBJ_DIR)/host/tests/retro_app.o $(OBJ_DIR)/host/tests/fake_core.o \
+		$(call front_libs,host) $(HOST_LIBS)
 	$(CXX) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
 
 $(UNIT_ASAN): $(OBJ_DIR)/asan/tests/sdk_test.o $(ASAN_LIBS)
@@ -148,11 +172,13 @@ $(SMOKE_ASAN): $(OBJ_DIR)/asan/tests/smoke_app.o $(ASAN_LIBS)
 
 test: host
 	$(UNIT_TEST)
+	$(FRONTEND_TEST)
 	NBT_SDK_BUILD_DIR=$(BUILD_DIR) $(PYTHON) -m unittest discover -s tests -v
 	@$(MAKE) --no-print-directory check-generic
 
-test-asan: $(UNIT_ASAN) $(SMOKE_ASAN)
+test-asan: $(UNIT_ASAN) $(SMOKE_ASAN) $(FRONTEND_ASAN)
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(UNIT_ASAN)
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(FRONTEND_ASAN)
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
 		NBT_SDK_BUILD_DIR=$(BUILD_DIR) NBT_SDK_SMOKE=$(SMOKE_ASAN) \
 		$(PYTHON) -m unittest discover -s tests
@@ -161,7 +187,7 @@ test-asan: $(UNIT_ASAN) $(SMOKE_ASAN)
 # and the manager's sandbox expect none.
 check-static-init: libs-host
 	@set -e; \
-	for obj in $(call objs,host,$(SDK_SRC) $(MIXER_SRC) $(GLES2_SRC)); do \
+	for obj in $(call objs,host,$(SDK_SRC) $(MIXER_SRC) $(GLES2_SRC) $(FRONTEND_SRC) $(RETRO_SRC)); do \
 		ctors="$$(readelf -S "$$obj" | awk '/\.init_array|\.ctors/ {print $$2}')"; \
 		if test -n "$$ctors"; then \
 			echo "ERROR: static constructor section in $$obj: $$ctors"; exit 1; \
@@ -170,10 +196,12 @@ check-static-init: libs-host
 	echo "OK: no .init_array/.ctors in SDK objects"
 
 # The SDK stays application-neutral and machine-neutral. The pattern is built
-# from pieces so that this file does not match it.
+# from pieces so that this file does not match it. Links to the sibling
+# repositories (the README's project row) are allowed.
 GENERIC_DENY := $(subst _,,d_oom|pr_boom|/ho_me/)
 check-generic:
-	@if grep -rIilE '$(GENERIC_DENY)' --exclude-dir=build --exclude-dir=.git .; then \
+	@if grep -rIinE '$(GENERIC_DENY)' --exclude-dir=build --exclude-dir=.git --exclude-dir=third_party . \
+		| grep -v 'https://github\.com/NBTFoundry/'; then \
 		echo "ERROR: application- or machine-specific text in the files above"; exit 1; \
 	fi; \
 	echo "OK: SDK is application-neutral"
@@ -209,7 +237,7 @@ qnx-check: qnx
 
 # --- Housekeeping ---
 FORMAT_FILES = $(filter-out src/readers/% $(foreach p,$(READER_FILES),$(firstword $(subst :, ,$(p)))), \
-	$(shell find include src mixer gles2 tests \( -name '*.c' -o -name '*.h' -o -name '*.cpp' -o -name '*.hpp' \)))
+	$(shell find include src mixer gles2 frontend retro tests \( -name '*.c' -o -name '*.h' -o -name '*.cpp' -o -name '*.hpp' \)))
 
 format:
 	clang-format -i $(FORMAT_FILES)

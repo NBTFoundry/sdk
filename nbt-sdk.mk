@@ -28,6 +28,15 @@ nbt_sdk_libs = $(NBT_SDK_LIB_DIR)/libnbt-audio-mixer-$(1).a $(NBT_SDK_LIB_DIR)/l
 NBT_SDK_HOST_LIBS = $(call nbt_sdk_libs,host)
 NBT_SDK_ASAN_LIBS = $(call nbt_sdk_libs,asan)
 NBT_SDK_QNX_LIBS = $(call nbt_sdk_libs,qnx)
+# The front end (libnbt-frontend) and the libretro host (libnbt-retro), for
+# applications that use them: put them first, the core (if any) before them.
+nbt_sdk_front_libs = $(NBT_SDK_LIB_DIR)/libnbt-retro-$(1).a $(NBT_SDK_LIB_DIR)/libnbt-frontend-$(1).a \
+	$(call nbt_sdk_libs,$(1))
+NBT_SDK_FRONT_HOST_LIBS = $(call nbt_sdk_front_libs,host)
+NBT_SDK_FRONT_ASAN_LIBS = $(call nbt_sdk_front_libs,asan)
+NBT_SDK_FRONT_QNX_LIBS = $(call nbt_sdk_front_libs,qnx)
+# libretro.h for an application's own sources (a core brings its own copy).
+NBT_SDK_LIBRETRO_INC := -I$(NBT_SDK_ROOT)/third_party/libretro-common/include
 
 NBT_SDK_HOST_LDLIBS := -lX11 -lEGL -lGLESv2 -lm -ldl -lpthread
 # kdMain must be exported for libKD (see qnx/exports.list).
@@ -45,8 +54,8 @@ nbt-sdk-asan:
 nbt-sdk-qnx:
 	+@$(NBT_SDK_MAKE) libs-qnx
 
-$(NBT_SDK_HOST_LIBS): nbt-sdk-host ;
-$(NBT_SDK_ASAN_LIBS): nbt-sdk-asan ;
-$(NBT_SDK_QNX_LIBS): nbt-sdk-qnx ;
+$(NBT_SDK_HOST_LIBS) $(NBT_SDK_FRONT_HOST_LIBS): nbt-sdk-host ;
+$(NBT_SDK_ASAN_LIBS) $(NBT_SDK_FRONT_ASAN_LIBS): nbt-sdk-asan ;
+$(NBT_SDK_QNX_LIBS) $(NBT_SDK_FRONT_QNX_LIBS): nbt-sdk-qnx ;
 
 .DEFAULT_GOAL := $(nbt_sdk_default_goal)

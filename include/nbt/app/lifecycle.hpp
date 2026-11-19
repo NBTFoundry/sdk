@@ -42,6 +42,9 @@ class Lifecycle {
   const char* bridge_caps() const { return caps_; }
   /* NBT_DATA_DIR, the application's private folder, or "". */
   const char* data_dir() const;
+  /* NBT_FILES_DIR, the files the user brought (capability `files`, read
+   * only: nbt/app/files.hpp), or "". */
+  const char* files_dir() const;
 
   int surface_id() const { return surface_id_; }
   int status_fd() const { return status_fd_; }

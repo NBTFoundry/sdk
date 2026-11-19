@@ -57,6 +57,12 @@ Menu::Result Menu::key(MenuKey key) {
     case kMenuDown:
       if (count_) focus_ = focus_ + 1 < count_ ? focus_ + 1 : 0;
       return kNone;
+    case kMenuPageUp:
+      focus_ = focus_ > kPage ? focus_ - kPage : 0;
+      return kNone;
+    case kMenuPageDown:
+      if (count_) focus_ = focus_ + kPage < count_ ? focus_ + kPage : count_ - 1;
+      return kNone;
     case kMenuSelect:
       return count_ ? kSelected : kNone;
     case kMenuBack:
@@ -130,6 +136,8 @@ void MenuInput::gamepad(const nbt_gamepad_wire_state& state, uint64_t now_ms) {
   const uint32_t pressed = state.buttons & ~before;
   if (pressed & NBT_GAMEPAD_SOUTH) push(kMenuSelect);
   if (pressed & NBT_GAMEPAD_EAST) push(kMenuBack);
+  if (pressed & NBT_GAMEPAD_LB) push(kMenuPageUp);
+  if (pressed & NBT_GAMEPAD_RB) push(kMenuPageDown);
 }
 
 void MenuInput::controller(const nbt_controller_wire_state& state, const controller::Event& event) {

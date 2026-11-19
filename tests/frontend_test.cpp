@@ -341,6 +341,18 @@ void test_menu_and_placement() {
   CHECK(menu->key(kMenuDown) == Menu::kNone && menu->focus() == 0);
   CHECK(menu->key(kMenuSelect) == Menu::kSelected && menu->is_open());
   CHECK(menu->key(kMenuBack) == Menu::kClosed && !menu->is_open());
+  /* A whole files folder, paged by ten and stopping at the ends. */
+  menu->open("Games");
+  for (int i = 0; i < 513; ++i) menu->add("game.sfc");
+  CHECK(menu->count() == 513);
+  CHECK(menu->key(kMenuPageUp) == Menu::kNone && menu->focus() == 0);
+  menu->key(kMenuPageDown);
+  menu->key(kMenuPageDown);
+  CHECK(menu->focus() == 20);
+  menu->set_focus(508);
+  CHECK(menu->key(kMenuPageDown) == Menu::kNone && menu->focus() == 512);
+  menu->key(kMenuPageUp);
+  CHECK(menu->focus() == 502);
   delete menu;
   /* A held BACK that opened the menu does not close it on release. */
   MenuInput in;
@@ -356,6 +368,14 @@ void test_menu_and_placement() {
   controller::Event turn = {0, 0, -2};
   in.controller(c, turn);
   CHECK(in.next(0) == kMenuUp && in.next(0) == kMenuUp && in.next(0) == kMenuNone);
+  /* A pad's shoulder buttons page, once seen released. */
+  nbt_gamepad_wire_state p;
+  memset(&p, 0, sizeof(p));
+  p.connected = 1;
+  in.gamepad(p, 0);
+  p.buttons = NBT_GAMEPAD_RB;
+  in.gamepad(p, 10);
+  CHECK(in.next(10) == kMenuPageDown && in.next(10) == kMenuNone);
   /* The panel's 1440x540 and a SNES frame of 256x224. */
   FrameOptions o = {kAspectDisplay, kFilterSharp, 4.0f / 3.0f};
   int x, y, w, h;

@@ -12,14 +12,23 @@
 namespace nbt {
 namespace frontend {
 
-enum MenuKey { kMenuNone = 0, kMenuUp, kMenuDown, kMenuSelect, kMenuBack };
+enum MenuKey {
+  kMenuNone = 0,
+  kMenuUp,
+  kMenuDown,
+  kMenuSelect,
+  kMenuBack,
+  kMenuPageUp,
+  kMenuPageDown
+};
 
 /* A list the application fills (a pause menu, a file picker), drawn over its
  * frame with an Overlay: a title, up to kMaxItems items with one focused,
- * and up to two lines of note. Scrolls when longer than the window. */
+ * and up to two lines of note. Scrolls when longer than the window. Enough
+ * items for a whole files folder (nbt::app::FileList::kMaxFiles) and one more. */
 class Menu {
  public:
-  enum { kMaxItems = 64, kTextMax = 100 };
+  enum { kMaxItems = 520, kTextMax = 100, kPage = 10 };
   enum Result { kNone = 0, kSelected, kClosed };
 
   Menu();
@@ -34,7 +43,8 @@ class Menu {
   size_t count() const { return count_; }
   const char* item(size_t i) const { return i < count_ ? items_[i] : ""; }
 
-  /* Up and down move (wrapping), select chooses the focused item, back closes. */
+  /* Up and down move (wrapping), page up and down by kPage (stopping at the
+   * ends), select chooses the focused item, back closes. */
   Result key(MenuKey key);
   void draw(Overlay& overlay, int window_w, int window_h) const;
 
@@ -47,7 +57,8 @@ class Menu {
 };
 
 /* Menu keys from every input: a pad's D-pad and left stick (repeating after
- * 400 ms), south confirms and east cancels; the iDrive controller's knob,
+ * 400 ms), south confirms, east cancels, the shoulder buttons page; the iDrive
+ * controller's knob,
  * tilts, push and BACK; the desktop's arrows, Return, Escape and Backspace. */
 class MenuInput {
  public:

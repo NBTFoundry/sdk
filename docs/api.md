@@ -201,7 +201,7 @@ libretro.
 | `pad_profiles.hpp` | `PadMapper`: the application's actions from a `PadProfile` per pad family (byte 3 of the gamepad state, bridge 1.5), a `ControllerProfile` (keys, knob detents as pulses, BACK tap, hold for the menu, long hold to quit) and a `KeyboardProfile`. An action is held while any source holds it; changes reach an `InputSink`. The profile follows the pad plugged in. |
 | `hints.hpp` | Inputs and buttons named as printed: "Cross", "Create", "Push"... |
 | `overlay.hpp` | `Overlay`: boxes and 8x8 text over the window's frame, restoring the GL state it changes. |
-| `menu.hpp` | `Menu`: a list with a title and notes, drawn with the overlay; `MenuInput` turns pad, controller and keyboard into up, down, select and back. |
+| `menu.hpp` | `Menu`: a list with a title and notes, drawn with the overlay; `MenuInput` turns pad, controller and keyboard into up, down, select and back, and a pad's shoulder buttons into pages of ten. A list holds a whole files folder. |
 | `save_file.hpp` | Whole-file writes through a synced `.next` and a rename; bounded reads that do not follow links. |
 
 Lay out each pad family's buttons by where they sit, so a game plays as on

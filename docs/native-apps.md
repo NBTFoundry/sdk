@@ -40,7 +40,7 @@ app.guest: $(OBJS) $(NBT_SDK_MOD_DEPS)       # a guest
 Worked examples: the `module` and `guest` targets of the NBTFoundry application repositories.
 
 Requirements: GNU make 4.3 or newer, Python 3, and the NBT toolchain (NBTFoundry/toolchains) for Linux x86-64, macOS arm64 or Windows x86-64 (MSYS2 make). The toolchain is Clang and LLD plus the runtime every payload links: picolibc, compiler-rt and libc++, and the C library headers that `module/runtime` implements.
-- `make toolchain` installs the release this SDK is pinned to (`NBT_TOOLCHAIN_VERSION` in `module/flags.mk`) in `sdk/toolchain/`, where every application finds it. It downloads with the GitHub CLI (`gh auth login` first).
+- `make toolchain` installs the release this SDK is pinned to (`NBT_TOOLCHAIN_VERSION` in `module/flags.mk`) in `sdk/toolchain/`, where every application finds it. It checks the download against the SHA-256 the SDK pins (`module/toolchain.sha256`).
 - Or unpack a release anywhere and set `NBT_TOOLCHAIN` to its directory.
 
 Payloads statically contain picolibc, whose BSD-style licences require shipping its notices with them: `share/licenses/picolibc/` in the toolchain. The SDK's own code is MPL-2.0: say where its source is.

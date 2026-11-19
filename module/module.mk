@@ -18,9 +18,10 @@ MODULE_CFLAGS := $(NBT_MOD_CFLAGS) -O2 -std=gnu11 $(WARN) -Imodule/runtime
 MODULE_CXXFLAGS := $(NBT_MOD_CXXFLAGS) -O2 -std=c++17 $(WARN) -Imodule/runtime
 
 # --- The NBT toolchain release this SDK uses, into toolchain/ ---
+# (module/toolchain.sha256 is that release's SHA256SUMS)
 .PHONY: toolchain
 toolchain:
-	$(PYTHON) tools/get_toolchain.py $(NBT_TOOLCHAIN_VERSION) toolchain
+	$(PYTHON) tools/get_toolchain.py $(NBT_TOOLCHAIN_VERSION) module/toolchain.sha256 toolchain
 
 # --- The module runtime library: entry, system calls, threads, memcpy ---
 # (the C library the toolchain's headers declare, over the host table)

@@ -2,24 +2,24 @@
 # SPDX-License-Identifier: MPL-2.0
 """Install an NBT toolchain release for this host ("make toolchain").
 
-  get_toolchain.py VERSION DIR
+  get_toolchain.py VERSION SUMS DIR
 
 Downloads nbt-toolchain-VERSION for this host from the NBTFoundry/toolchains
-releases with the GitHub CLI (the repository is private: "gh auth login"
-first), checks it against its published SHA-256 and unpacks it as
-DIR/nbt-toolchain-VERSION. Does nothing if that is already there.
+releases, checks it against the SHA-256 the SDK pins for it (SUMS, a copy of
+the release's SHA256SUMS) and unpacks it as DIR/nbt-toolchain-VERSION. Does
+nothing if that is already there.
 """
 import hashlib
 import os
 import platform
 import shutil
-import subprocess
 import sys
 import tarfile
 import tempfile
+import urllib.request
 import zipfile
 
-REPO = "NBTFoundry/toolchains"
+URL = "https://github.com/NBTFoundry/toolchains/releases/download/v%s/%s"
 
 
 def host():
@@ -35,11 +35,24 @@ def host():
     sys.exit("get_toolchain: no NBT toolchain is built for %s %s" % (system, machine))
 
 
-def sha256(path):
+def pinned(sums, asset):
+    with open(sums, encoding="utf-8") as f:
+        for line in f:
+            fields = line.split()
+            if len(fields) == 2 and fields[1] == asset:
+                return fields[0]
+    sys.exit("get_toolchain: %s pins no SHA-256 for %s" % (sums, asset))
+
+
+def download(url, path):
     h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r, open(path, "wb") as f:
+            for block in iter(lambda: r.read(1 << 20), b""):
+                h.update(block)
+                f.write(block)
+    except OSError as e:  # urllib's errors are OSErrors
+        sys.exit("get_toolchain: %s: %s" % (url, e))
     return h.hexdigest()
 
 
@@ -59,28 +72,23 @@ def unpack(archive, dest):
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) != 4:
         sys.exit(__doc__.strip())
-    version, dest = sys.argv[1], os.path.abspath(sys.argv[2])
+    version, sums, dest = sys.argv[1], sys.argv[2], os.path.abspath(sys.argv[3])
     name = "nbt-toolchain-" + version
     target = os.path.join(dest, name)
     if os.path.isfile(os.path.join(target, "VERSION")):
         print("%s: already installed" % target)
         return 0
-    if not shutil.which("gh"):
-        sys.exit("get_toolchain: needs the GitHub CLI (gh), or unpack %s from "
-                 "https://github.com/%s/releases yourself" % (name, REPO))
     hostname, ext = host()
     asset = "%s-%s%s" % (name, hostname, ext)
+    expected = pinned(sums, asset)
     os.makedirs(dest, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=dest) as tmp:
-        subprocess.run(["gh", "release", "download", "v" + version, "-R", REPO, "-D", tmp,
-                        "-p", asset, "-p", asset + ".sha256"], check=True)
         archive = os.path.join(tmp, asset)
-        with open(archive + ".sha256", encoding="utf-8") as f:
-            expected = f.read().split()[0]
-        if sha256(archive) != expected:
-            sys.exit("get_toolchain: %s does not match its SHA-256" % asset)
+        print("downloading %s" % (URL % (version, asset)))
+        if download(URL % (version, asset), archive) != expected:
+            sys.exit("get_toolchain: %s does not match the SHA-256 in %s" % (asset, sums))
         unpack(archive, os.path.join(tmp, "x"))
         os.replace(os.path.join(tmp, "x", name), target)
     print("%s: installed" % target)

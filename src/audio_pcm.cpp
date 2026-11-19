@@ -69,50 +69,6 @@ bool g_pcm_open = false;
 
 }  // namespace
 
-int clamp_qnx_rate(int preferred, int min_rate, int max_rate) {
-  int rate = (preferred >= 8000 && preferred <= 48000) ? preferred : kAudioDefaultRate;
-  if (min_rate > 0 && rate < min_rate) rate = min_rate;
-  if (max_rate > 0 && rate > max_rate) rate = max_rate;
-  return rate;
-}
-
-int choose_qnx_frag_size(int preferred_bytes, int min_frag, int max_frag) {
-  int lo = (min_frag > 256) ? min_frag : 256;
-  int hi = (max_frag > 0 && max_frag < 8192) ? max_frag : 8192;
-  if (hi < lo) hi = lo;
-  int target = (preferred_bytes > 0) ? preferred_bytes : (kAudioFragFrames * 4);
-  if (target < lo) target = lo;
-  if (target > hi) target = hi;
-
-  int pow2 = 256;
-  while (pow2 * 2 <= target && pow2 * 2 <= hi) {
-    pow2 *= 2;
-  }
-  if (pow2 < lo) {
-    int up = 256;
-    while (up < lo && up < 8192) up *= 2;
-    if (up <= hi) return up;
-    return lo;
-  }
-  return pow2;
-}
-
-AudioPcm::AudioPcm()
-    : render_(NULL),
-      render_context_(NULL),
-      sample_rate_(kAudioDefaultRate),
-      frag_frames_(kAudioFragFrames),
-      dl_handle_(NULL),
-      pcm_handle_(NULL),
-      owner_(false),
-      thread_running_(false),
-      stop_requested_(false),
-      thread_() {}
-
-AudioPcm::~AudioPcm() {
-  close();
-}
-
 bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, bool route_wanted) {
   if (active() || !render) return active();
   const char* no_audio = getenv("NBT_NO_AUDIO");

@@ -227,6 +227,15 @@ $(SMOKE_QNX): $(OBJ_DIR)/qnx/tests/smoke_app.o $(QNX_LIBS) qnx/exports.list | qn
 
 qnx: libs-qnx $(SMOKE_QNX)
 
+# The car runs QNX 6.5.0 SP1: imports must exist there, not just in the 6.6 SDP.
+QNX65_SP1_SYSROOT ?= $(HOME)/src/tools/qnx-6.5sp1-tools/sdk/target/qnx6
+# qnx_import_check(binaries)
+define qnx_import_check
+	@if test -d "$(QNX65_SP1_SYSROOT)"; then \
+		$(PYTHON) tools/check_qnx_imports.py --sysroot "$(QNX65_SP1_SYSROOT)" --readelf $(NBT_MOD_READELF) $(1); \
+	else echo "skipped: no QNX 6.5.0 SP1 sysroot at $(QNX65_SP1_SYSROOT)"; fi
+endef
+
 qnx-check: qnx
 	. "$(QNX_ENV)" && $(QNX_READELF) -h -d $(SMOKE_QNX)
 	. "$(QNX_ENV)" && set -e; \
@@ -234,6 +243,7 @@ qnx-check: qnx
 		if test -n "$$bad"; then echo "Disallowed QNX ABI symbols:"; echo "$$bad"; exit 1; fi; \
 		$(QNX_NM) -D $(SMOKE_QNX) | grep -qw kdMain || { echo "kdMain is not exported"; exit 1; }; \
 		echo "OK: QNX ELF/ABI symbols verified, kdMain exported"
+	$(call qnx_import_check,$(SMOKE_QNX))
 
 # --- Housekeeping ---
 FORMAT_FILES = $(filter-out src/readers/% $(foreach p,$(READER_FILES),$(firstword $(subst :, ,$(p)))), \
@@ -247,3 +257,9 @@ clean:
 
 DEPS := $(shell find $(OBJ_DIR) -name '*.d' 2>/dev/null)
 -include $(DEPS)
+
+# --- Applications without the QNX SDP (docs/native-apps.md) ---
+include module/module.mk
+include guest/guest.mk
+include runner/runner.mk
+include tools/qnx65-vm/vm.mk

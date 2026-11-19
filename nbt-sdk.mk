@@ -44,7 +44,8 @@ NBT_SDK_QNX_LDFLAGS := -Wl,--dynamic-list,$(NBT_SDK_ROOT)/qnx/exports.list
 NBT_SDK_QNX_LDLIBS := -lscreen -lEGL -lGLESv2 -lsocket -lm
 
 NBT_SDK_MAKE = $(MAKE) --no-print-directory -C $(NBT_SDK_ROOT) BUILD_DIR=$(NBT_SDK_BUILD_DIR) \
-	QNX_ENV="$(QNX_ENV)" QNX_SCREEN_LIBDIR="$(QNX_SCREEN_LIBDIR)"
+	QNX_ENV="$(QNX_ENV)" QNX_SCREEN_LIBDIR="$(QNX_SCREEN_LIBDIR)" NBT_MOD_RUNTIME_DIR="$(NBT_MOD_RUNTIME_DIR)" \
+	NBT_MOD_UNALIGNED="$(NBT_MOD_UNALIGNED)"
 
 .PHONY: nbt-sdk-host nbt-sdk-asan nbt-sdk-qnx
 nbt-sdk-host:
@@ -57,5 +58,34 @@ nbt-sdk-qnx:
 $(NBT_SDK_HOST_LIBS) $(NBT_SDK_FRONT_HOST_LIBS): nbt-sdk-host ;
 $(NBT_SDK_ASAN_LIBS) $(NBT_SDK_FRONT_ASAN_LIBS): nbt-sdk-asan ;
 $(NBT_SDK_QNX_LIBS) $(NBT_SDK_FRONT_QNX_LIBS): nbt-sdk-qnx ;
+
+# --- Without the QNX SDP: modules and guests, run by nbt-runner ---
+# (docs/native-apps.md) Compile with $(NBT_MOD_CC) $(NBT_MOD_CFLAGS) or
+# $(NBT_MOD_CXX) $(NBT_MOD_CXXFLAGS) plus the application's own flags, then
+# link and check one of:
+#   app.so: $(OBJS) $(NBT_SDK_MOD_DEPS)       a module (not GPL/LGPL)
+#   	$(call nbt_module_link,$@,$(OBJS),<SPDX licence of OBJS>)
+#   app.guest: $(OBJS) $(NBT_SDK_MOD_DEPS)    a guest (GPL/LGPL allowed)
+#   	$(call nbt_guest_link,$@,$(OBJS),<SPDX licence of OBJS>)
+NBT_MOD_ROOT := $(NBT_SDK_ROOT)
+NBT_MOD_BUILD := $(abspath $(NBT_SDK_BUILD_DIR))
+# The runtime does not depend on the application: share the SDK's own build.
+NBT_MOD_RUNTIME_DIR ?= $(NBT_SDK_ROOT)/build
+include $(NBT_SDK_ROOT)/module/flags.mk
+NBT_SDK_MOD_DEPS = $(NBT_MOD_LINK_DEPS) $(NBT_GUEST_RT_OBJS)
+
+# A test package's executable for today's NBT Manager: nbt-runner with the
+# payload appended (built with the QNX SDP: needs QNX_ENV and QNX_SCREEN_LIBDIR).
+#   $(NBT_SDK_BUNDLE) app.so app-bundle
+NBT_SDK_RUNNER = $(NBT_SDK_BUILD_DIR)/nbt-runner
+NBT_SDK_BUNDLE = $(NBT_PYTHON) $(NBT_SDK_ROOT)/tools/nbt_bundle.py $(NBT_SDK_RUNNER)
+
+.PHONY: nbt-sdk-runner nbt-sdk-mod
+nbt-sdk-runner:
+	+@$(NBT_SDK_MAKE) nbt-runner
+$(NBT_SDK_RUNNER): nbt-sdk-runner ;
+nbt-sdk-mod:
+	+@$(NBT_SDK_MAKE) libs-mod guest-runtime
+$(NBT_SDK_MOD_DEPS): nbt-sdk-mod ;
 
 .DEFAULT_GOAL := $(nbt_sdk_default_goal)

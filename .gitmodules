@@ -4,3 +4,19 @@
 [submodule "third_party/font8x8"]
 	path = third_party/font8x8
 	url = git@github.com:dhepper/font8x8.git
+[submodule "third_party/picolibc"]
+	path = third_party/picolibc
+	url = git@github.com:picolibc/picolibc.git
+	shallow = true
+[submodule "third_party/llvm-project"]
+	path = third_party/llvm-project
+	url = git@github.com:llvm/llvm-project.git
+	shallow = true
+[submodule "third_party/EGL-Registry"]
+	path = third_party/EGL-Registry
+	url = git@github.com:KhronosGroup/EGL-Registry.git
+	shallow = true
+[submodule "third_party/OpenGL-Registry"]
+	path = third_party/OpenGL-Registry
+	url = git@github.com:KhronosGroup/OpenGL-Registry.git
+	shallow = true

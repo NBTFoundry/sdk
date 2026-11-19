@@ -38,32 +38,6 @@ void close_fd(int* fd) {
 
 }  // namespace
 
-Lifecycle::Lifecycle()
-    : ready_fd_(-1),
-      lease_fd_(-1),
-      status_fd_(-1),
-      controller_fd_(-1),
-      gamepad_fd_(-1),
-      surface_id_(0),
-      check_mode_(false),
-      user_mode_(true),
-      can_show_(false),
-      has_live_settings_(false),
-      last_settings_error_(NULL),
-      last_heartbeat_ms_(0),
-      settings_generation_(0) {
-  caps_[0] = '\0';
-  settings_file_[0] = '\0';
-}
-
-Lifecycle::~Lifecycle() {
-  close_fds();
-}
-
-bool Lifecycle::is_bridge_arg(const char* arg) {
-  return arg && (strcmp(arg, "--ready-fd") == 0 || strcmp(arg, "--lease-fd") == 0);
-}
-
 int Lifecycle::init(int argc, char** argv) {
   g_stopping = 0;
   g_show_requested = 0;
@@ -147,20 +121,6 @@ int Lifecycle::init(int argc, char** argv) {
   sa.sa_handler = SIG_IGN;
   sigaction(SIGPIPE, &sa, NULL);
   return 0;
-}
-
-bool Lifecycle::has_cap(const char* cap) const {
-  return bridge_cap_has(caps_, cap);
-}
-
-const char* Lifecycle::data_dir() const {
-  const char* dir = getenv("NBT_DATA_DIR");
-  return dir ? dir : "";
-}
-
-const char* Lifecycle::files_dir() const {
-  const char* dir = getenv("NBT_FILES_DIR");
-  return dir ? dir : "";
 }
 
 void Lifecycle::close_fds() {

@@ -14,8 +14,9 @@
  *   stop
  *
  * Options: --crash (fault after installing the crash handler), --video,
- * --audio, --gesture <tap>,<double>,<hold>,<long> (milliseconds), and
- * --status-file <path> (its first line is the status text, read each tick). */
+ * --audio, --gesture <tap>,<double>,<hold>,<long> (milliseconds),
+ * --status-file <path> (its first line is the status text, read each tick)
+ * and --stop-after-ms <n> (ask to stop after n ms, as a close would). */
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,6 +45,7 @@ struct Options {
   bool video;
   bool audio;
   const char* status_file;
+  unsigned long stop_after_ms; /* 0: run until stopped */
   nbt::app::BackGestureConfig gesture;
 };
 
@@ -163,6 +165,8 @@ int main(int argc, char** argv) {
       if (!parse_gesture(argv[++i], &opt.gesture)) return 2;
     } else if (!strcmp(argv[i], "--status-file") && i + 1 < argc) {
       opt.status_file = argv[++i];
+    } else if (!strcmp(argv[i], "--stop-after-ms") && i + 1 < argc) {
+      opt.stop_after_ms = strtoul(argv[++i], NULL, 10);
     }
   }
 
@@ -204,9 +208,11 @@ int main(int argc, char** argv) {
   nbt::controller::Input controller;
   nbt::gamepad::Input gamepad;
   char status[64];
+  const uint64_t started = nbt::app::monotonic_ms();
 
   while (!lifecycle.stopping()) {
     const uint64_t now = nbt::app::monotonic_ms();
+    if (opt.stop_after_ms && now - started >= opt.stop_after_ms) lifecycle.request_stop();
     if (lifecycle.controller_fd() >= 0) {
       ControllerContext ctx = {&back, now};
       controller.poll(lifecycle.controller_fd(), &on_controller, &ctx);

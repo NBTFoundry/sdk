@@ -1,0 +1,6 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* A module exports exactly one symbol. */
+{
+  global: nbt_module_v1;
+  local: *;
+};

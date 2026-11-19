@@ -106,7 +106,8 @@ bool RETRO_CALLCONV environment(unsigned cmd, void* data) {
     case RETRO_ENVIRONMENT_GET_INPUT_BITMASKS:
       return true;
     case RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE:
-      *static_cast<int*>(data) = 3; /* video and audio */
+      /* Bit 0 video (off for a frame skipped), bit 1 audio. */
+      *static_cast<int*>(data) = (h->video_on ? 1 : 0) | (h->sound ? 2 : 0);
       return true;
     case RETRO_ENVIRONMENT_GET_FASTFORWARDING:
       *static_cast<bool*>(data) = false;

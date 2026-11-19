@@ -9,7 +9,8 @@
  *   unload
  *   input mask=<hex>      (when port 0's joypad changes)
  *   option core_region=<value>
- *   serialize | unserialize frame=<n> */
+ *   serialize | unserialize frame=<n>
+ *   drawn <n> of 120      (every 120 frames: those the host had it draw) */
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,7 +25,7 @@ static retro_input_state_t input_cb;
 
 static uint16_t frame_buffer[256 * 224];
 static unsigned char sram[8192];
-static unsigned frame;
+static unsigned frame, counted, drawn;
 static int16_t last_mask = -1;
 static char region[32];
 
@@ -103,6 +104,7 @@ void retro_run(void) {
   bool updated = false;
   int16_t samples[2 * 534];
   int16_t mask;
+  int av = 3;
   unsigned i;
   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated &&
       environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &v) && v.value && strcmp(v.value, region)) {
@@ -115,8 +117,16 @@ void retro_run(void) {
     last_mask = mask;
     say("input mask=%04x", (unsigned)(uint16_t)mask);
   }
-  for (i = 0; i < 256 * 224; ++i) frame_buffer[i] = (uint16_t)((i + frame) * 0x0841u);
-  video_cb(frame_buffer, 256, 224, 256 * 2);
+  /* Frame skip: a frame the host does not draw is not rendered. */
+  if (!environ_cb(RETRO_ENVIRONMENT_GET_AUDIO_VIDEO_ENABLE, &av) || (av & 1)) {
+    for (i = 0; i < 256 * 224; ++i) frame_buffer[i] = (uint16_t)((i + frame) * 0x0841u);
+    video_cb(frame_buffer, 256, 224, 256 * 2);
+    ++drawn;
+  }
+  if (++counted == 120) {
+    say("drawn %u of 120", drawn);
+    counted = drawn = 0;
+  }
   for (i = 0; i < 534; ++i) samples[2 * i] = samples[2 * i + 1] = (int16_t)((i % 73) * 200);
   audio_cb(samples, 534);
   ++frame;

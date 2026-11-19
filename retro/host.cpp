@@ -76,6 +76,8 @@ void apply_settings(Host& h) {
                            : !strcmp(filter, "nearest") ? frontend::kFilterNearest
                                                         : frontend::kFilterSharp;
   h.show_fps = !strcmp(s.get("show_fps", "off"), "on");
+  const char* skip = s.get("frameskip", "off");
+  h.frameskip = !strcmp(skip, "auto") ? -1 : !strcmp(skip, "1") ? 1 : !strcmp(skip, "2") ? 2 : 0;
   app::log_set_debug(!strcmp(s.get("debug_log", "off"), "on"));
   const bool sound = strcmp(s.get("sound", "on"), "off") != 0;
   if (sound != h.sound) {
@@ -255,10 +257,24 @@ void draw(Host& h, uint64_t now) {
   h.video.swap();
 }
 
-/* Runs the core's frames due, and returns how many; a queue of sound well
- * ahead holds them back. */
+/* Whether the frame about to run is drawn: a fixed frame skip draws one in
+ * frameskip + 1; auto skips while the loop runs over a frame late, at most 3
+ * in a row. A core that ignores GET_AUDIO_VIDEO_ENABLE draws them all. */
+bool draw_this_frame(Host& h, uint64_t now) {
+  bool skip = false;
+  if (h.frameskip > 0) {
+    skip = h.skipped < static_cast<unsigned>(h.frameskip);
+  } else if (h.frameskip < 0) {
+    skip = h.skipped < 3 && static_cast<double>(now) > h.next_frame_ms + h.frame_ms;
+  }
+  h.skipped = skip ? h.skipped + 1 : 0;
+  return !skip;
+}
+
+/* Runs the core's frames due, and returns how many it drew; a queue of sound
+ * well ahead holds them back. */
 int run_frames(Host& h, uint64_t now) {
-  int ran = 0;
+  int drawn = 0;
   if (!h.loaded || h.menu_kind != kMenuClosed) {
     h.next_frame_ms = static_cast<double>(now);
     return 0;
@@ -273,13 +289,15 @@ int run_frames(Host& h, uint64_t now) {
   }
   for (int n = 0; n < 2 && static_cast<double>(now) >= h.next_frame_ms; ++n) {
     if (h.sound && h.pcm.active() && h.audio.fill() > 2 * h.audio.target()) break;
+    h.video_on = draw_this_frame(h, now);
     retro_run();
-    ++ran;
+    if (h.video_on) ++drawn;
     ++h.frames_this_second;
     h.next_frame_ms += h.frame_ms;
   }
+  h.video_on = true;
   save_sram(h, false);
-  return ran;
+  return drawn;
 }
 
 int check_mode(Host& h) {
@@ -349,6 +367,9 @@ Host::Host(const HostConfig& c)
       menu_kind(kMenuClosed),
       sound(true),
       show_fps(false),
+      frameskip(0),
+      skipped(0),
+      video_on(true),
       frame_ms(1000.0 / 60.0),
       next_frame_ms(0),
       frames_this_second(0),

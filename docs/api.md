@@ -220,7 +220,10 @@ opens with a pad's Guide button or its View and Menu together, the iDrive
 MENU key or a BACK hold; a long BACK hold quits.
 
 The front end's own settings: `aspect` (`4-3`, `pixel`, `full`), `filter`
-(`sharp`, `smooth`, `nearest`), `sound`, `show_fps`, `debug_log`.
+(`sharp`, `smooth`, `nearest`), `sound`, `frameskip` (`off`, `auto`, `1`,
+`2`: frames the core runs without drawing, for a core that asks with
+`GET_AUDIO_VIDEO_ENABLE`; `auto` while the loop runs late), `show_fps`,
+`debug_log`.
 `VariableMap` entries feed core variables from other settings
 (`CoreOptions`); a value the core does not list is never given to it. Cores
 declare plain variables (`RETRO_ENVIRONMENT_SET_VARIABLES`): the host does not

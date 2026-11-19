@@ -67,6 +67,9 @@ struct Host {
   MenuKind menu_kind;
   frontend::FrameOptions frame_options;
   bool sound, show_fps;
+  int frameskip;    /* 0 off, -1 auto, n: draw one frame in n + 1 */
+  unsigned skipped; /* frames not drawn in a row */
+  bool video_on;    /* the frame running is drawn (GET_AUDIO_VIDEO_ENABLE) */
   double frame_ms, next_frame_ms;
   unsigned frames_this_second, fps;
   uint64_t fps_since_ms;

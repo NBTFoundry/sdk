@@ -191,6 +191,24 @@ class RetroHostTest(unittest.TestCase):
         app.wait(r"^unload$")
         self.assertEqual(app.stop(), 0)
 
+    def test_frame_skip_draws_one_frame_in_two(self):
+        app = self.start(frameskip="1")
+        self.press(0)
+        self.press(SOUTH)
+        self.press(0)
+        app.wait(r"^load ")
+        app.wait(r"^drawn 60 of 120$")
+        self.assertEqual(app.stop(), 0)
+
+    def test_without_frame_skip_every_frame_is_drawn(self):
+        app = self.start()
+        self.press(0)
+        self.press(SOUTH)
+        self.press(0)
+        app.wait(r"^load ")
+        app.wait(r"^drawn 120 of 120$")
+        self.assertEqual(app.stop(), 0)
+
     def test_an_empty_folder_says_how_to_add_games(self):
         for name in os.listdir(self.files):
             os.unlink(os.path.join(self.files, name))

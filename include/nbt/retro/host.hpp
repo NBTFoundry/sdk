@@ -39,6 +39,8 @@ struct HostConfig {
  *   aspect    4-3 | pixel | full      the frame's shape on the panel
  *   filter    sharp | smooth | nearest
  *   sound     on | off
+ *   frameskip off | auto | 1 | 2  frames not drawn, for a core that asks
+ *                                 (GET_AUDIO_VIDEO_ENABLE); auto while late
  *   show_fps  off | on
  *   debug_log off | on
  *

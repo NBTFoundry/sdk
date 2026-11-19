@@ -1,0 +1,182 @@
+# NBT App SDK API
+
+Everything is in namespace `nbt::app` unless noted, under `include/nbt/`. The
+SDK is C++11 without exceptions or RTTI, allocates nothing at start-up, and
+has no static constructors. On the head unit it targets QNX 6.5 ARMv7.
+
+## Libraries
+
+```mermaid
+flowchart LR
+  APP["Your application"] --> MIXER["libnbt-audio-mixer<br/>AudioMixer"]
+  APP --> SDK["libnbt-sdk<br/>Lifecycle · Settings · Log<br/>VideoEgl · AudioPcm · AudioRoute<br/>InputMixer · BackGesture<br/>controller &amp; gamepad readers"]
+  APP --> GLES2["libnbt-gles2<br/>GL1 → GLES2 shim"]
+  MIXER --> SDK
+```
+
+| Library | Contents | Needs |
+| --- | --- | --- |
+| `libnbt-sdk` | everything in `src/` | libc, pthread, EGL, GLESv2; X11 on a host, Screen on QNX |
+| `libnbt-audio-mixer` | `AudioMixer` | `libnbt-sdk` |
+| `libnbt-gles2` | the GL1-to-GLES2 shim | GLESv2 |
+
+Link order: `libnbt-audio-mixer`, `libnbt-gles2`, `libnbt-sdk`. On QNX, link
+with `-Wl,--dynamic-list,qnx/exports.list` so that `kdMain` is exported:
+libKD looks it up when the SDK opens it at run time.
+
+## An application's main loop
+
+```mermaid
+sequenceDiagram
+  participant M as NBT Manager
+  participant A as Application
+  M->>A: start (--ready-fd, --lease-fd, NBT_* environment)
+  A->>A: Lifecycle::init — lease lock, capabilities, settings
+  A->>A: VideoEgl::init on NBT_SURFACE
+  A->>M: send_ready() — "R"
+  loop every frame
+    M-->>A: controller / gamepad datagrams
+    A->>A: controller::Input::poll, gamepad::Input::poll
+    A->>A: render, VideoEgl::swap
+    A->>M: tick() — heartbeat "R", status line (1 Hz)
+    A->>A: tick() reloads NBT_SETTINGS_FILE
+  end
+  M->>A: SIGUSR1 (show) / SIGTERM (stop)
+  A->>A: stopping() → shut down, close_fds()
+```
+
+```cpp
+#include "nbt/app/clock.hpp"
+#include "nbt/app/lifecycle.hpp"
+#include "nbt/app/log.hpp"
+#include "nbt/app/video.hpp"
+#include "nbt/controller/input.hpp"
+
+int main(int argc, char** argv) {
+  nbt::app::log_init("hello");
+  nbt::app::Lifecycle lifecycle;
+  if (int rc = lifecycle.init(argc, argv)) return rc;
+  nbt::app::log_install_crash_handlers();
+
+  nbt::app::VideoEgl video;
+  if (lifecycle.is_user_mode() && !video.init(lifecycle.surface_id())) return 1;
+  if (!lifecycle.send_ready()) return 1;
+
+  nbt::controller::Input controller;
+  while (!lifecycle.stopping()) {
+    const uint64_t now = nbt::app::monotonic_ms();
+    controller.poll(lifecycle.controller_fd(), &on_controller, NULL);
+    draw();
+    video.swap();
+    bool settings_changed = false;
+    lifecycle.tick(now, "Running", &settings_changed);
+    if (settings_changed) apply(lifecycle.settings());
+  }
+  video.shutdown();
+  lifecycle.close_fds();
+  return 0;
+}
+```
+
+## Lifecycle — `nbt/app/lifecycle.hpp`
+
+The application's side of the bridge described in
+`NBTFoundry/manager: docs/app-bridge.md`. One instance per process.
+
+| Call | Purpose |
+| --- | --- |
+| `int init(argc, argv)` | Parses `--ready-fd`/`--lease-fd` (both or neither), takes a shared lock on the lease, reads `NBT_LAUNCH`, `NBT_SURFACE`, `NBT_BRIDGE_CAPS` and the descriptors of granted capabilities, loads settings, installs signal handlers. Returns 0 (run), 1 (lease or surface unusable), 2 (usage error). |
+| `static bool is_bridge_arg(arg)` | Whether `arg` is `--ready-fd` or `--lease-fd` (each takes a value), to strip them from argv. |
+| `is_check_mode()`, `is_user_mode()`, `can_show()` | `NBT_LAUNCH=check` is a health check without display or input. |
+| `has_cap(name)`, `bridge_caps()` | The granted capabilities. |
+| `surface_id()`, `status_fd()`, `controller_fd()`, `gamepad_fd()` | Descriptors of granted capabilities, or -1. Input descriptors are validated datagram sockets, made non-blocking. |
+| `data_dir()` | `NBT_DATA_DIR`, the application's private folder. |
+| `settings()`, `settings_generation()` | `NBT_SETTING_*` values overlaid with `NBT_SETTINGS_FILE` (capability `live-settings`). |
+| `send_ready()` | Writes the readiness byte. |
+| `tick(now_ms, status, &changed)` | At most once a second: heartbeat, settings reload, status line. A failed heartbeat (the manager went away) stops the application. |
+| `stopping()`, `request_stop()`, `consume_show_requested()` | SIGTERM/SIGINT stop; SIGUSR1 asks to come to the front; SIGPIPE is ignored. |
+| `close_fds()` | Closes every bridge descriptor. |
+
+## Settings — `nbt/app/settings.hpp`
+
+`Settings` holds up to 16 key/value pairs (keys: 1–16 of `[a-z0-9_]`,
+starting with a letter; values: 1–12 of `[a-z0-9_-]`). It does not know the
+application's choices: the application maps the values onto its own settings
+and ignores values it does not accept.
+
+- `settings_load_env(&s)` adds `NBT_SETTING_<KEY>=<value>` (key lower-cased).
+- `settings_read_file(path, &s, &reason)` reads the manager's snapshot,
+  `NBTVALUES1\n` then `key=value\n` lines, with the manager's own checks: a
+  regular file (no symlink), owned by the user, mode without group or other
+  bits, one link, shorter than 372 bytes. One bad line rejects the file.
+- `Settings::parse_values(text, size)` applies that format from memory.
+
+## Log — `nbt/app/log.hpp`
+
+Lines go to stderr, which the manager keeps as the application's log:
+`[tag] message`, and `[tag][dbg] message` while debug is on. `log_stage()`
+names the current stage, which a crash line repeats:
+
+```
+[hello] FATAL sig=11 code=1 addr=0x0 pc=0x... lr=0x... sp=0x... stage=render
+[hello] pc in /lib/libc.so.3+0x3e8dc (memcpy+0x1c)
+```
+
+## Input
+
+| Header | API |
+| --- | --- |
+| `nbt/controller/input.hpp` (`nbt::controller`) | `Input::poll(fd, deliver, ctx)` and `Input::feed()` decode capability `controller`: the iDrive knob (detents), push, tilts, MENU, BACK, OPTION, COM, MEDIA, NAV, MAP and the favourite keys 1–8. Keys count only after every key was seen up; a lost link releases them. |
+| `nbt/gamepad/input.hpp` (`nbt::gamepad`) | `Input::poll(fd, now, deliver, ctx)` decodes capability `gamepad` (sequence, staleness, neutral arming); `Navigation` turns the D-pad into menu presses with repeat. `nbt_gamepad_axis()` applies a dead zone. |
+| `nbt/app/input_mixer.hpp` | `InputMixer`: up to 4 sources × 512 keys; a key is down while any source holds it. `SourceSink` feeds one source. Types from `InputAction::kAppAction` pass through. |
+| `nbt/app/back_gesture.hpp` | `BackGesture`: tap (release before 400 ms), double tap (second tap within 350 ms), hold (600 ms), long hold (1400 ms, before the manager's own 2000 ms BACK escape). `update()` takes the key level; `poll()` reports holds. Timings are configurable. |
+
+```mermaid
+stateDiagram-v2
+  [*] --> Up
+  Up --> Down: press
+  Down --> Up: release < tap_max → Tap / DoubleTap
+  Down --> Held: poll ≥ hold_ms → Hold
+  Held --> LongHeld: poll ≥ long_hold_ms → LongHold
+  Held --> Up: release (no tap)
+  LongHeld --> Up: release (no tap)
+```
+
+## Video — `nbt/app/video.hpp`
+
+`VideoEgl::init(surface_id, &config)` opens an OpenGL ES 2 window and makes its
+context current, then shows a black frame so the manager can bind the surface.
+
+- Head unit: a full-panel window bound to `NBT_SURFACE`, through libKD if it
+  loads, else QNX Screen.
+- Linux host: an X11 window (`config.host_title`, default size 1280×480).
+  `poll_event()` reports key presses as `HostKey` values (printable ASCII
+  lower-cased, or a named key), window resizes and the close button.
+
+## Audio
+
+| Header | API |
+| --- | --- |
+| `nbt/app/audio_pcm.hpp` | `AudioPcm::open(rate, render, ctx, route_wanted)`: stereo S16LE output through libasound loaded at run time (io-audio on the head unit, ALSA on a host) and a playback thread that calls `render`. `NBT_NO_AUDIO=1` skips the device. One instance per process. |
+| `nbt/app/audio_route.hpp` | `AudioRoute`: builds and releases the head unit's audio connection with `audioconn` (default connection 0xb8). `NBT_AUDIO_CONN` overrides the connection (0 turns routing off), `NBT_AUDIOCONN` the binary, and `<data_dir>/audio-conn` names another connection. |
+| `nbt/app/audio_mixer.hpp` | `AudioMixer` (libnbt-audio-mixer): 16 channels of 8-bit unsigned or 16-bit signed mono samples, each with a 16.16 step and left/right volume, mixed over an optional music renderer. Muting also releases the audio connection. |
+
+## GL1 → GLES2 shim — `nbt/gles2/gles2_compat.h`
+
+C99. Fixed-function calls (`glBegin`/`glEnd`, the matrix stack, `glColor`,
+`glTexCoord`, client arrays, fog, `glAlphaFunc`, `glTexEnv`) mapped onto
+GLES2 shaders and a vertex batch, for porting desktop OpenGL 1.x renderers.
+Texture-coordinate generation and display lists are accepted and do nothing.
+Include it instead of
+`GL/gl.h`; call `gles2_batch_init()` once the context is current and
+`gles2_batch_shutdown()` before it goes. `gles2_set_viewport_mapping()` and
+`gles2_set_gamma()` control scaling and gamma. Errors are logged as
+`[nbt-gles2] ...`.
+
+## Helpers
+
+- `nbt/app/clock.hpp`: `monotonic_ms()`.
+- `nbt/app/parse.hpp`: `parse_int`, `parse_int_range`, `parse_bool`.
+- `nbt/app/bridge.hpp`: `bridge_cap_has`, `bridge_status_sanitize`,
+  `bridge_status_format`, `datagram_input_fd`.
+- `nbt/app/version.hpp`: `NBT_APP_SDK_VERSION`.

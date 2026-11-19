@@ -1,0 +1,21 @@
+Bridge readers shared with NBT Manager
+
+These files are byte-for-byte copies of NBT Manager's application-side bridge
+readers. The manager encodes the datagrams; applications decode them with the
+same code. Change them in the manager first, then copy them here.
+
+  SDK                                 NBTFoundry/manager
+  include/nbt/controller_wire.h       include/nbt/controller_wire.h
+  include/nbt/controller/input.hpp    include/nbt/controller/input.hpp
+  include/nbt/gamepad_wire.h          include/nbt/gamepad_wire.h
+  include/nbt/gamepad/input.hpp       include/nbt/gamepad/input.hpp
+  src/readers/controller_wire.cpp     src/sdk/controller_wire.cpp
+  src/readers/controller_input.cpp    src/sdk/controller_input.cpp
+  src/readers/gamepad_wire.cpp        src/sdk/gamepad_wire.cpp
+  src/readers/gamepad_input.cpp       src/sdk/gamepad_input.cpp
+
+Check that they match:
+
+  make check-readers NBT_MGR_DIR=../manager
+
+They keep the manager's formatting; `make format` leaves them alone.

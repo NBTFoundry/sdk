@@ -188,6 +188,27 @@ manager stores, the given extensions in any case, sorted without regard to
 case, at most 512. `read(i, max, &size)` reads one into memory without
 following a link. Saves and the like belong in `data_dir()`.
 
+## Full-screen applications — bridge 1.6
+
+For an application that places its own surface on the panel (Android Auto),
+declared optional in its package (`tools/package.py --bridge 1.6
+--bridge-optional hold,car-data,net`):
+
+- **Focus hold** (`hold`): `Lifecycle::request_hold(kHold)` while on screen,
+  `kPeek` while iDrive's own favourites bar is shown over it, `kRelease` when
+  it leaves. `hold_state()` reads the answer: 1 held, 2 aside (iDrive took the
+  screen: leave it; a new `kHold` comes back). Poll it from the main loop.
+- **Car data** (`car-data`, signed `--bridge-cds name,name`):
+  `nbt::app::CarData` (`nbt/app/car_data.hpp`), `init()` then
+  `read(name, value, size, &sequence)`: iDrive's own text, usually JSON
+  (`{"gear":2}`); nothing until the car gives a value.
+- **Network** (`net`, signed `--bridge-net tcp:<port>@uap0+wfd0`): NBT Manager
+  lets those connections in while the application runs;
+  `Lifecycle::net_rules()` is the rules when they are open, else empty.
+
+The wire formats are the manager's (`nbt/bridge_hold.h`, READERS); the
+manager's `docs/app-bridge.md`, components 5-7, describes the rest.
+
 ## Other programs — `nbt/app/child.hpp`, `nbt/app/payload.h`
 
 An application may start the head unit's tools, or a companion program it

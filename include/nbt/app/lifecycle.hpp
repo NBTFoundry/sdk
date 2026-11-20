@@ -29,7 +29,7 @@ class Lifecycle {
    * them before handing argv to other code. */
   static bool is_bridge_arg(const char* arg);
 
-  /* Closes the ready, lease, status, controller and gamepad descriptors. */
+  /* Closes the ready, lease, status, controller, gamepad and hold descriptors. */
   void close_fds();
 
   /* NBT_LAUNCH=check: a health check (no display, no input). */
@@ -69,6 +69,21 @@ class Lifecycle {
   bool consume_show_requested();
   void request_stop();
 
+  /* Capability `hold` (bridge 1.6), for an application that places its own
+   * surface: NBT Manager holds iDrive on an inert state while it asks, so the
+   * knob does not drive iDrive's menus underneath. kHold while on screen,
+   * kPeek while iDrive's own favourites bar is shown over it (kept, nothing
+   * enforced), kRelease when it leaves the screen. Each call is a new
+   * request; false without the grant or on a failed write. */
+  enum HoldWord { kHold = 1, kPeek = 2, kRelease = 3 };
+  bool request_hold(HoldWord word);
+  /* The manager's answer: 0 none yet, 1 held, 2 aside (iDrive took the
+   * screen: leave it; a new kHold comes back). `sequence` (may be NULL)
+   * changes with each answer. */
+  int hold_state(uint64_t* sequence) const;
+  /* NBT_NET: the network rules the manager let in (capability `net`), or "". */
+  const char* net_rules() const { return net_; }
+
  private:
   Lifecycle(const Lifecycle&);
   Lifecycle& operator=(const Lifecycle&);
@@ -80,6 +95,10 @@ class Lifecycle {
   int status_fd_;
   int controller_fd_;
   int gamepad_fd_;
+  int hold_fd_;
+  uint64_t hold_sequence_;
+  char hold_state_[256];
+  char net_[128];
   int surface_id_;
   bool check_mode_;
   bool user_mode_;

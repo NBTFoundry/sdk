@@ -13,6 +13,8 @@ same code. Change them in the manager first, then copy them here.
   src/readers/controller_input.cpp    src/sdk/controller_input.cpp
   src/readers/gamepad_wire.cpp        src/sdk/gamepad_wire.cpp
   src/readers/gamepad_input.cpp       src/sdk/gamepad_input.cpp
+  include/nbt/bridge_hold.h           include/nbt/bridge_hold.h
+  src/readers/bridge_hold.cpp         src/sdk/bridge_hold.cpp
 
 Check that they match:
 

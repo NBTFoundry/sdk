@@ -3,6 +3,6 @@
 #define NBT_APP_VERSION_HPP
 
 /* NBT App SDK release. */
-#define NBT_APP_SDK_VERSION "0.2.0"
+#define NBT_APP_SDK_VERSION "0.3.0"
 
 #endif /* NBT_APP_VERSION_HPP */

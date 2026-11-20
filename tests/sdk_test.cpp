@@ -19,6 +19,7 @@
 #include "nbt/app/bridge.hpp"
 #include "nbt/app/child.hpp"
 #include "nbt/app/input_mixer.hpp"
+#include "nbt/app/car_data.hpp"
 #include "nbt/app/lifecycle.hpp"
 #include "nbt/app/log.hpp"
 #include "nbt/app/parse.hpp"
@@ -780,7 +781,7 @@ void test_child() {
   CHECK(out_env[0] == f1 && out_env[1] == e1 && out_env[2] == e3 && out_env[3] == NULL);
   CHECK(child_environment(src_env, first, out_env, 3) == -1); /* does not fit */
   CHECK(child_environment(src_env, NULL, out_env, 5, true) == 4);
-  CHECK(out_env[1] == e2 && out_env[4] == NULL); /* LD_PRELOAD kept */
+  CHECK(out_env[1] == e2 && out_env[4] == NULL);             /* LD_PRELOAD kept */
   CHECK(child_environment(src_env, first, out_env, 5) == 3); /* the children below: no preload */
 
   /* The map: 0 = /dev/null, 1 and 2 = a pipe, 3 = another pipe; nothing else. */
@@ -884,6 +885,66 @@ void test_host_keys() {
 
 }  // namespace
 
+/* Bridge 1.6: the hold request and answer, the network rules, car data. */
+void test_bridge_16() {
+  char dir[64], hold_path[128], state_path[128], value_path[160], fd_text[16];
+  make_temp_dir(dir, sizeof(dir), "bridge16");
+  snprintf(hold_path, sizeof(hold_path), "%s/hold", dir);
+  snprintf(state_path, sizeof(state_path), "%s/state", dir);
+  const int hold = open(hold_path, O_RDWR | O_CREAT, 0600);
+  CHECK(hold >= 3);
+  snprintf(fd_text, sizeof(fd_text), "%d", hold);
+  setenv("NBT_LAUNCH", "user", 1);
+  setenv("NBT_BRIDGE_CAPS", "hold,car-data,net", 1);
+  setenv("NBT_HOLD_FD", fd_text, 1);
+  setenv("NBT_HOLD_STATE", state_path, 1);
+  setenv("NBT_NET", "tcp:5277@uap0+wfd0", 1);
+  setenv("NBT_CDS_DIR", dir, 1);
+  char name[] = "app";
+  char* argv[] = {name, NULL};
+  {
+    Lifecycle lc;
+    CHECK(lc.init(1, argv) == 0);
+    CHECK(!strcmp(lc.net_rules(), "tcp:5277@uap0+wfd0"));
+    CHECK(lc.request_hold(Lifecycle::kHold));
+    char text[32] = "";
+    CHECK(pread(hold, text, sizeof(text) - 1, 0) == 7 && !strcmp(text, "1 hold\n"));
+    CHECK(lc.request_hold(Lifecycle::kPeek));
+    memset(text, 0, sizeof(text));
+    CHECK(pread(hold, text, sizeof(text) - 1, 0) == 7 && !strcmp(text, "2 peek\n"));
+    uint64_t seq = 0;
+    CHECK(lc.hold_state(&seq) == 0);
+    const int state = open(state_path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    CHECK(state >= 0 && write(state, "5 aside\n", 8) == 8 && close(state) == 0);
+    CHECK(lc.hold_state(&seq) == 2 && seq == 5);
+    lc.close_fds(); /* closes the hold descriptor */
+  }
+  CarData cars;
+  CHECK(cars.init());
+  char value[201];
+  uint64_t seq = 0;
+  CHECK(!cars.read("driving.gear", value, sizeof(value), &seq));
+  snprintf(value_path, sizeof(value_path), "%s/nbt-bridge1-cds-driving.gear", dir);
+  const int fd = open(value_path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+  CHECK(fd >= 0 && write(fd, "3 {\"gear\":2}\n", 13) == 13 && close(fd) == 0);
+  CHECK(cars.read("driving.gear", value, sizeof(value), &seq) && seq == 3 &&
+        !strcmp(value, "{\"gear\":2}"));
+  CHECK(!cars.read("../driving.gear", value, sizeof(value), &seq));
+  CHECK(!cars.read("driving.gear", value, 4, &seq)); /* too small */
+  /* Without the grants: nothing. */
+  setenv("NBT_BRIDGE_CAPS", "", 1);
+  {
+    Lifecycle lc;
+    CHECK(lc.init(1, argv) == 0 && !lc.request_hold(Lifecycle::kHold) && !lc.net_rules()[0]);
+  }
+  unsetenv("NBT_HOLD_FD");
+  unsetenv("NBT_HOLD_STATE");
+  unsetenv("NBT_NET");
+  unsetenv("NBT_CDS_DIR");
+  unsetenv("NBT_BRIDGE_CAPS");
+  unsetenv("NBT_LAUNCH");
+}
+
 int main() {
   test_gles2_matrix_and_batch();
   test_readers();
@@ -892,6 +953,7 @@ int main() {
   test_parse_and_bridge();
   test_settings();
   test_lifecycle();
+  test_bridge_16();
   test_audio_mixer();
   test_log();
   test_audio_route();

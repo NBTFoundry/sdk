@@ -53,7 +53,9 @@ READER_FILES := \
 	src/readers/controller_wire.cpp:src/sdk/controller_wire.cpp \
 	src/readers/controller_input.cpp:src/sdk/controller_input.cpp \
 	src/readers/gamepad_wire.cpp:src/sdk/gamepad_wire.cpp \
-	src/readers/gamepad_input.cpp:src/sdk/gamepad_input.cpp
+	src/readers/gamepad_input.cpp:src/sdk/gamepad_input.cpp \
+	include/nbt/bridge_hold.h:include/nbt/bridge_hold.h \
+	src/readers/bridge_hold.cpp:src/sdk/bridge_hold.cpp
 
 SDK_SRC := $(sort $(wildcard src/*.cpp src/*.c src/readers/*.cpp))
 MIXER_SRC := mixer/audio_mixer.cpp

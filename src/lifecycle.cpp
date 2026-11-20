@@ -12,6 +12,7 @@
 #include "nbt/app/bridge.hpp"
 #include "nbt/app/log.hpp"
 #include "nbt/app/parse.hpp"
+#include "nbt/bridge_hold.h"
 
 namespace nbt {
 namespace app {
@@ -46,6 +47,10 @@ int Lifecycle::init(int argc, char** argv) {
   status_fd_ = -1;
   controller_fd_ = -1;
   gamepad_fd_ = -1;
+  hold_fd_ = -1;
+  hold_sequence_ = 0;
+  hold_state_[0] = '\0';
+  net_[0] = '\0';
   surface_id_ = 0;
   caps_[0] = '\0';
   settings_file_[0] = '\0';
@@ -100,6 +105,22 @@ int Lifecycle::init(int argc, char** argv) {
     gamepad_fd_ = datagram_input_fd(getenv("NBT_GAMEPAD_FD"), excluded, 4);
   }
 
+  if (user_mode_ && has_cap("hold")) {
+    const char* hfd = getenv("NBT_HOLD_FD");
+    const char* state = getenv("NBT_HOLD_STATE");
+    int fd = -1;
+    if (hfd && parse_int(hfd, 3, &fd) && fd != ready_fd_ && fd != lease_fd_ && fd != status_fd_ &&
+        fd != controller_fd_ && fd != gamepad_fd_ && state && state[0] == '/' &&
+        strlen(state) < sizeof(hold_state_)) {
+      hold_fd_ = fd;
+      snprintf(hold_state_, sizeof(hold_state_), "%s", state);
+    }
+  }
+  const char* net = getenv("NBT_NET");
+  if (user_mode_ && has_cap("net") && net && strlen(net) < sizeof(net_)) {
+    snprintf(net_, sizeof(net_), "%s", net);
+  }
+
   settings_load_env(&env_settings_);
   settings_ = env_settings_;
   if (has_live_settings_) {
@@ -124,11 +145,42 @@ int Lifecycle::init(int argc, char** argv) {
 }
 
 void Lifecycle::close_fds() {
+  close_fd(&hold_fd_);
   close_fd(&gamepad_fd_);
   close_fd(&controller_fd_);
   close_fd(&status_fd_);
   close_fd(&ready_fd_);
   close_fd(&lease_fd_);
+}
+
+bool Lifecycle::request_hold(HoldWord word) {
+  char line[NBT_HOLD_LINE_MAX + 1];
+  if (hold_fd_ < 0) return false;
+  const int n = nbt_hold_request_format(++hold_sequence_, static_cast<nbt_hold_word>(word), line,
+                                        sizeof(line));
+  if (n < 0) return false;
+  ssize_t w;
+  do {
+    w = pwrite(hold_fd_, line, static_cast<size_t>(n), 0);
+  } while (w < 0 && errno == EINTR);
+  return w == n && ftruncate(hold_fd_, n) == 0;
+}
+
+int Lifecycle::hold_state(uint64_t* sequence) const {
+  char line[NBT_HOLD_LINE_MAX + 1];
+  if (!hold_state_[0]) return 0;
+  const int fd = open(hold_state_, O_RDONLY | O_NONBLOCK);
+  if (fd < 0) return 0;
+  ssize_t n;
+  do {
+    n = read(fd, line, sizeof(line));
+  } while (n < 0 && errno == EINTR);
+  close(fd);
+  uint64_t seq = 0;
+  nbt_hold_state state = NBT_HOLD_HELD;
+  if (n <= 0 || nbt_hold_state_parse(line, static_cast<size_t>(n), &seq, &state)) return 0;
+  if (sequence) *sequence = seq;
+  return state == NBT_HOLD_HELD ? 1 : 2;
 }
 
 bool Lifecycle::send_ready() {

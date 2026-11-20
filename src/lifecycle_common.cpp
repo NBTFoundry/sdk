@@ -16,6 +16,8 @@ Lifecycle::Lifecycle()
       status_fd_(-1),
       controller_fd_(-1),
       gamepad_fd_(-1),
+      hold_fd_(-1),
+      hold_sequence_(0),
       surface_id_(0),
       check_mode_(false),
       user_mode_(true),
@@ -26,6 +28,8 @@ Lifecycle::Lifecycle()
       settings_generation_(0) {
   caps_[0] = '\0';
   settings_file_[0] = '\0';
+  hold_state_[0] = '\0';
+  net_[0] = '\0';
 }
 
 Lifecycle::~Lifecycle() {

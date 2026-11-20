@@ -200,7 +200,8 @@ check-static-init: libs-host
 # repositories (the README's project row) are allowed.
 GENERIC_DENY := $(subst _,,d_oom|pr_boom|/ho_me/)
 check-generic:
-	@if grep -rIinE '$(GENERIC_DENY)' --exclude-dir=build --exclude-dir=.git --exclude-dir=third_party . \
+	@if grep -rIinE '$(GENERIC_DENY)' --exclude-dir=build --exclude-dir=.git --exclude-dir=third_party \
+		--exclude-dir=toolchain . \
 		| grep -v 'https://github\.com/NBTFoundry/'; then \
 		echo "ERROR: application- or machine-specific text in the files above"; exit 1; \
 	fi; \

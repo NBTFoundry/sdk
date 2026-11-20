@@ -25,7 +25,9 @@ toolchain:
 
 # --- The module runtime library: entry, system calls, threads, memcpy ---
 # (the C library the toolchain's headers declare, over the host table)
-MODULE_RT_OBJS := $(patsubst module/runtime/%.c,$(MODULE_OBJ)/rt/%.o,$(wildcard module/runtime/*.c))
+# (wildcards sorted: archive member order, and so the payloads, must not
+# depend on the file system's directory order)
+MODULE_RT_OBJS := $(patsubst module/runtime/%.c,$(MODULE_OBJ)/rt/%.o,$(sort $(wildcard module/runtime/*.c)))
 
 $(MODULE_OBJ)/rt/%.o: module/runtime/%.c $(MODULE_LIBC)
 	@mkdir -p $(dir $@)
@@ -47,7 +49,7 @@ MOD_OBJ := $(OBJ_DIR)/mod
 MOD_CFLAGS := $(MODULE_CFLAGS) $(INC) -std=gnu99
 MOD_CXXFLAGS := $(MODULE_CXXFLAGS) $(INC) -std=c++11 -fno-exceptions -fno-rtti
 MOD_PLATFORM_SRC := src/lifecycle.cpp src/video_qnx.cpp src/video_egl.cpp src/audio_pcm.cpp
-MOD_SDK_SRC := $(filter-out $(MOD_PLATFORM_SRC),$(SDK_SRC)) $(wildcard module/sdk/*.cpp)
+MOD_SDK_SRC := $(filter-out $(MOD_PLATFORM_SRC),$(SDK_SRC)) $(sort $(wildcard module/sdk/*.cpp))
 MOD_GL_C := $(BUILD_DIR)/module-gl/gl_table.c
 
 $(MOD_OBJ)/%.o: %.cpp $(MODULE_RUNTIME_LIBS)

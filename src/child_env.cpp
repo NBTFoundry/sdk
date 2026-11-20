@@ -25,7 +25,8 @@ bool set_by(char* const* first, const char* entry) {
 
 }  // namespace
 
-int child_environment(char* const* src, char* const* first, char* out[], size_t max_out) {
+int child_environment(char* const* src, char* const* first, char* out[], size_t max_out,
+                      bool keep_preload) {
   if (!out || max_out == 0) return -1;
   size_t n = 0;
   for (char* const* p = first; p && *p; ++p) {
@@ -33,7 +34,7 @@ int child_environment(char* const* src, char* const* first, char* out[], size_t 
     out[n++] = *p;
   }
   for (char* const* p = src; p && *p; ++p) {
-    if (strncmp(*p, "LD_PRELOAD=", 11) == 0 || set_by(first, *p)) continue;
+    if ((!keep_preload && strncmp(*p, "LD_PRELOAD=", 11) == 0) || set_by(first, *p)) continue;
     if (n + 1 >= max_out) return -1;
     out[n++] = *p;
   }

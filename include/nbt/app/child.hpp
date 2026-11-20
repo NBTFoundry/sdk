@@ -26,10 +26,13 @@ int spawn_child(const char* path, char* const argv[], char* const envp[], const 
                 unsigned count, bool own_group, pid_t* pid);
 
 /* Fills `out` (at most max_out entries, the last one NULL) with `first`
- * (NULL-terminated, may be NULL), then `src` without LD_PRELOAD (a library
- * iDrive preloads must not reach a child) and without the variables `first`
- * sets. Returns the number of entries, or -1 when they do not fit. */
-int child_environment(char* const* src, char* const* first, char* out[], size_t max_out);
+ * (NULL-terminated, may be NULL), then `src` without the variables `first`
+ * sets and, unless `keep_preload`, without LD_PRELOAD: iDrive preloads its
+ * graphics stack, which a tool must not load but a program that opens its
+ * own window needs. Returns the number of entries, or -1 when they do not
+ * fit. */
+int child_environment(char* const* src, char* const* first, char* out[], size_t max_out,
+                      bool keep_preload = false);
 
 /* Whether `pid` has exited, reaping it (*status, when not NULL, gets the
  * wait status). */

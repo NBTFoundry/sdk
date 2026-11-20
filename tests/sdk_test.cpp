@@ -779,6 +779,9 @@ void test_child() {
   CHECK(child_environment(src_env, first, out_env, 5) == 3); /* MODE from `first` only */
   CHECK(out_env[0] == f1 && out_env[1] == e1 && out_env[2] == e3 && out_env[3] == NULL);
   CHECK(child_environment(src_env, first, out_env, 3) == -1); /* does not fit */
+  CHECK(child_environment(src_env, NULL, out_env, 5, true) == 4);
+  CHECK(out_env[1] == e2 && out_env[4] == NULL); /* LD_PRELOAD kept */
+  CHECK(child_environment(src_env, first, out_env, 5) == 3); /* the children below: no preload */
 
   /* The map: 0 = /dev/null, 1 and 2 = a pipe, 3 = another pipe; nothing else. */
   int out_pipe[2], extra_pipe[2];

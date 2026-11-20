@@ -202,9 +202,11 @@ signed file.
   closed, nothing else inherited), default signal actions and an empty mask:
   QNX `spawn()`, since QNX 6.5's `fork()` fails in a process with threads.
   With `own_group` it leads its own process group.
-- `child_environment(environ, first, out, max)` gives a child `first` and
-  then this process's environment without `LD_PRELOAD` (iDrive preloads its
-  graphics stack) or the variables `first` sets.
+- `child_environment(environ, first, out, max, keep_preload)` gives a child
+  `first` and then this process's environment without the variables `first`
+  sets and, unless `keep_preload`, without `LD_PRELOAD`: iDrive preloads its
+  graphics stack, which a tool must not load but a program with its own
+  window needs.
 - `child_exited(pid, &status)` and `stop_child(pid, group, wait_ms,
   term_ms)`: a grace period, then SIGTERM, then SIGKILL.
 

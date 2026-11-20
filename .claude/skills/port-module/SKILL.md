@@ -53,7 +53,9 @@ Background: `sdk/docs/native-apps.md`. Examples: nf-snes9x's `module` and
 
 What a payload cannot do (`module/runtime/sys_none.c`): `fork`, `exec*`, `system` and `poll`
 fail with `ENOSYS`; no `dlopen`; files only in `NBT_DATA_DIR` (the files folder
-is read-only). A guest has one GL thread; `glGetUniform*v` is not streamed; an
+is read-only); `mmap` only anonymous, never fixed (a hint is ignored). A JIT
+(dynarec) works: `mmap`/`mprotect` with `PROT_EXEC`, also on static memory, and
+`__clear_cache` (`module/runtime/mman.c`). A guest has one GL thread; `glGetUniform*v` is not streamed; an
 indexed draw from a bound element buffer takes all its vertex data from
 buffers. Code that needs any of these: port-sdk-gap, or a QNX SDP build.
 

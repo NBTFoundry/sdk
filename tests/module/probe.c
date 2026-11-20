@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -244,6 +245,54 @@ static void check_exec_memory(void) {
   check("jit: write, protect, run", ok);
 }
 
+/* The same through the C library, as JIT compilers port: mmap, mprotect and
+ * __clear_cache on a range inside a page, writable and executable at once,
+ * code rewritten in place, and executable static memory. */
+static uint32_t jit_bss[2048] __attribute__((aligned(4096)));
+
+/* Writes "mov r0, #value; bx lr" at `at`, flushes those 8 bytes, runs them. */
+static int run_code(uint32_t* at, uint32_t value) {
+  at[0] = 0xe3a00000u | value;
+  at[1] = 0xe12fff1eu;
+  __builtin___clear_cache((char*)at, (char*)(at + 2));
+  int (*fn)(void) = (int (*)(void))(void*)at;
+  return fn() == (int)value;
+}
+
+static void check_exec_mman(void) {
+  uint32_t* page = (uint32_t*)mmap(NULL, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  int ok = page != MAP_FAILED && page[100] == 0;
+  if (ok) {
+    page[16] = 0xe3a0002bu; /* mov r0, #43 */
+    page[17] = 0xe12fff1eu;
+    ok = mprotect(page, 8192, PROT_READ | PROT_EXEC) == 0;
+    __builtin___clear_cache((char*)(page + 16), (char*)(page + 18));
+    ok = ok && ((int (*)(void))(void*)(page + 16))() == 43;
+    ok &= munmap(page, 8192) == 0;
+  }
+  check("jit: mmap, mprotect, __clear_cache", ok);
+
+  page = (uint32_t*)mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ok = page != MAP_FAILED;
+  if (ok) {
+    ok = run_code(page + 8, 44) && run_code(page + 8, 45); /* rewritten in place */
+    ok &= munmap(page, 4096) == 0;
+  }
+  check("jit: writable and executable mapping", ok);
+
+  ok = mprotect(jit_bss, sizeof(jit_bss), PROT_READ | PROT_WRITE | PROT_EXEC) == 0;
+  ok = ok && run_code(jit_bss + 3, 46) && run_code(jit_bss + 3, 47);
+  ok &= mprotect(jit_bss, sizeof(jit_bss), PROT_READ | PROT_WRITE) == 0;
+  check("jit: executable static memory", ok);
+
+  errno = 0;
+  ok = mmap(NULL, 4096, PROT_READ, MAP_PRIVATE, 3, 0) == MAP_FAILED && errno == ENODEV;
+  errno = 0;
+  ok &= mmap((void*)0x10000000, 4096, PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) == MAP_FAILED &&
+        errno == EINVAL;
+  check("jit: no file or fixed mappings", ok);
+}
+
 /* 9. unaligned access (only on request) */
 static void check_unaligned(void) {
   static unsigned char bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
@@ -281,6 +330,7 @@ int main(int argc, char** argv) {
   check_malloc();
   check_files();
   check_exec_memory();
+  check_exec_mman();
   probe_cxx();
   for (int i = 1; i < argc; ++i)
     if (strcmp(argv[i], "--unaligned") == 0) check_unaligned();

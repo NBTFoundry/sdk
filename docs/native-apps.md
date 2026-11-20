@@ -48,9 +48,12 @@ Payloads statically contain picolibc, whose BSD-style licences require shipping 
 What a module or guest cannot do:
 - start processes or wait on descriptors: `fork`, `exec*`, `system` and `poll` fail with `ENOSYS`;
 - load libraries;
-- open files outside the application's data folder. The files folder is readable.
+- open files outside the application's data folder. The files folder is readable;
+- map files or map at a fixed address: `mmap` takes only anonymous mappings (`MAP_FIXED` fails with `EINVAL`, a file with `ENODEV`) and ignores an address hint.
 
 The C library still declares these functions, so portable code links (`module/runtime/sys_none.c`).
+
+JIT compilers work as on Linux (`module/runtime/mman.c`, toolchain 1.1.0 or newer): anonymous `mmap` (pages committed on first use, zeroed), `munmap`, `mprotect` with `PROT_EXEC` (writable and executable at once, or one after the other; static memory too), and `__builtin___clear_cache` before running written code.
 
 ## The runner
 

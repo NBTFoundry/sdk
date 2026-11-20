@@ -55,7 +55,9 @@ flowchart LR
 | `libnbt-retro` | A libretro host: one statically linked core as an application, with a game list, saves, states and a pause menu |
 
 The API is described in [docs/api.md](docs/api.md); the bridge contract it
-implements is `NBTFoundry/manager: docs/app-bridge.md`.
+implements is `NBTFoundry/manager: docs/app-bridge.md`. Porting an existing
+program: [docs/porting.md](docs/porting.md), with step-by-step skills for AI
+agents in [.claude/skills/](.claude/skills/).
 
 ## A minimal application
 

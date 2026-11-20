@@ -9,10 +9,8 @@ Tests run in the user's own car, parked, by the user. There is no bench.
 Workstation values (test key, kit folder, toolchain): the workspace `CLAUDE.md`.
 
 1. **Manager kit.** If the port needed changes in the manager, the phone app
-   or the installer, the car needs a new kit: in the manager, with clean
-   trees in manager, mobile-app and installer, `make kit` with `QNX_ENV`,
-   `QNX_SCREEN_LIBDIR`, `RHMI_LIBDIR` and `NBT_KIT_DIR` set. It prints the
-   kit version (`devN`).
+   or the installer, the car needs a new kit first: the manager's
+   `manager-kit` skill. The procedure names the kit version (`devN`).
 2. **Two test packages**, to test install then update:
    `make package APP_KEY=<test key> APP_VERSION=0.0.N APP_SEQ=N`, for the next
    two N above anything sent before. Verify both with `nbt-verify`

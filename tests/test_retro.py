@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: MPL-2.0
 """The libretro host (libnbt-retro) with tests/fake_core.c, under Xvfb: the
 game list from the files folder, the pad's bindings by family, the pause
-menu from a pad and from the iDrive controller, save states, battery saves
-and the settings feeding core variables."""
+menu from a pad and from the iDrive controller, save states, battery saves,
+the settings feeding core variables, disc swaps, the system folder and
+--game."""
 
 import os
 import re
@@ -46,11 +47,11 @@ def xvfb():
 class App:
     """The application with its stdout (the fake core's events) read by line."""
 
-    def __init__(self, env, pass_fds):
+    def __init__(self, env, pass_fds, args=()):
         full = {k: v for k, v in os.environ.items() if not k.startswith("NBT_")}
         full.update(env)
-        self.proc = subprocess.Popen([APP], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                     env=full, pass_fds=pass_fds)
+        self.proc = subprocess.Popen([APP, *args], stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE, env=full, pass_fds=pass_fds)
         self.lines, self.buf = [], b""
 
     def wait(self, pattern, timeout=8.0):
@@ -107,7 +108,7 @@ class RetroHostTest(unittest.TestCase):
         self.x.wait(timeout=5)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
-    def start(self, **settings):
+    def start(self, *args, **settings):
         env = {
             "NBT_LAUNCH": "user", "DISPLAY": self.display, "LIBGL_ALWAYS_SOFTWARE": "1",
             "NBT_NO_AUDIO": "1", "NBT_FILES_DIR": self.files, "NBT_DATA_DIR": self.data,
@@ -116,7 +117,7 @@ class RetroHostTest(unittest.TestCase):
             "NBT_CONTROLLER_FD": str(self.knob_app.fileno()),
         }
         env.update({"NBT_SETTING_" + k.upper(): v for k, v in settings.items()})
-        app = App(env, (self.pad_app.fileno(), self.knob_app.fileno()))
+        app = App(env, (self.pad_app.fileno(), self.knob_app.fileno()), args)
         app.wait(r"^init$")
         return app
 
@@ -140,6 +141,8 @@ class RetroHostTest(unittest.TestCase):
         self.press(0)
         line = app.wait(r"^load ")
         self.assertTrue(line.endswith("/Alpha.fake size=7"), line)
+        # BIOS files are looked for in the files folder (system_in_files).
+        self.assertEqual(app.wait(r"^system "), "system " + self.files)
         app.wait(r"^option core_region=PAL$")
         app.wait(r"^input mask=0000$")
         # An Xbox pad by position: east (B) is the SNES pad's A.
@@ -179,6 +182,38 @@ class RetroHostTest(unittest.TestCase):
         with open(os.path.join(self.data, "last-game"), "rb") as f:
             self.assertEqual(f.read(), b"Alpha.fake")
         self.assertIn("DualShock 4 connected", app.stderr)
+
+    def test_discs_are_swapped_from_the_pause_menu(self):
+        with open(os.path.join(self.files, "Two.fake"), "wb") as f:
+            f.write(b"DISCS")
+        app = self.start("--game", "Two.fake")
+        line = app.wait(r"^load ")
+        self.assertTrue(line.endswith("/Two.fake size=5"), line)
+        app.wait(r"^input mask=0000$")
+        # The menu: Resume, Save, Load, Slot, then the disc row.
+        self.press(0)
+        self.press(VIEW | MENU)
+        self.press(0)
+        for _ in range(4):
+            self.press(DOWN)
+            self.press(0)
+        self.press(SOUTH)
+        self.press(0)
+        app.wait(r"^disc eject=1$")
+        app.wait(r"^disc index=1$")
+        app.wait(r"^disc eject=0$")
+        self.assertEqual(app.stop(), 0)
+        self.assertIn("Disc 2 of 2 inserted: Side B", app.stderr)
+
+    def test_an_unknown_game_shows_the_list(self):
+        app = self.start("--game", "Missing.fake")
+        self.press(0)
+        self.press(SOUTH)
+        self.press(0)
+        line = app.wait(r"^load ")
+        self.assertTrue(line.endswith("/Alpha.fake size=7"), line)
+        self.assertEqual(app.stop(), 0)
+        self.assertIn("--game Missing.fake: not in the files folder", app.stderr)
 
     def test_a_long_back_hold_quits(self):
         app = self.start()

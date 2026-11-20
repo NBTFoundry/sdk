@@ -18,7 +18,7 @@ namespace retro {
 
 namespace {
 
-enum PauseItem { kResume, kSave, kLoad, kSlot, kReset, kGames, kQuit };
+enum PauseItem { kResume, kSave, kLoad, kSlot, kDisc, kReset, kGames, kQuit };
 const unsigned kSlots = 4;
 
 struct Events {
@@ -88,6 +88,38 @@ void apply_settings(Host& h) {
   h.options.apply(s);
 }
 
+/* A core with several discs (and the calls to change them): the pause menu
+ * gets a disc row after the slot. */
+bool has_discs(const Host& h) {
+  return h.disk.get_num_images && h.disk.get_image_index && h.disk.set_image_index &&
+         h.disk.set_eject_state && h.disk.get_num_images() > 1;
+}
+
+PauseItem pause_item(const Host& h, size_t focus) {
+  if (!h.menu_disc && focus >= kDisc) ++focus;
+  return focus <= kQuit ? static_cast<PauseItem>(focus) : kQuit;
+}
+
+/* The next disc, as a player swaps them: open the lid, change the disc,
+ * close the lid. */
+void change_disc(Host& h, uint64_t now) {
+  const unsigned count = h.disk.get_num_images();
+  const unsigned index = h.disk.get_image_index();
+  const unsigned next = index + 1 < count ? index + 1 : 0;
+  bool ok = h.disk.set_eject_state(true) && h.disk.set_image_index(next);
+  ok = h.disk.set_eject_state(false) && ok;
+  char label[48] = "";
+  if (!ok || !h.disk.get_image_label || !h.disk.get_image_label(next, label, sizeof(label))) {
+    label[0] = '\0';
+  }
+  label[sizeof(label) - 1] = '\0';
+  if (ok) {
+    notice(h, now, "Disc %u of %u inserted%s%s", next + 1, count, label[0] ? ": " : "", label);
+  } else {
+    notice(h, now, "Cannot change to disc %u of %u", next + 1, count);
+  }
+}
+
 void open_pause(Host& h) {
   char text[64];
   h.mapper.release_all();
@@ -102,6 +134,16 @@ void open_pause(Host& h) {
   h.menu.add(text);
   snprintf(text, sizeof(text), "Slot: %u", h.slot);
   h.menu.add(text);
+  h.menu_disc = has_discs(h);
+  if (h.menu_disc) {
+    const unsigned count = h.disk.get_num_images(), index = h.disk.get_image_index();
+    if (index < count) {
+      snprintf(text, sizeof(text), "Disc: %u of %u", index + 1, count);
+    } else {
+      snprintf(text, sizeof(text), "Disc: none of %u", count);
+    }
+    h.menu.add(text);
+  }
   h.menu.add("Reset");
   h.menu.add("Choose another game");
   h.menu.add("Quit");
@@ -147,7 +189,7 @@ void open_games(Host& h) {
 }
 
 void pause_choice(Host& h, uint64_t now) {
-  switch (h.menu.focus()) {
+  switch (pause_item(h, h.menu.focus())) {
     case kResume:
       h.menu.close();
       break;
@@ -159,8 +201,13 @@ void pause_choice(Host& h, uint64_t now) {
       notice(h, now, load_state(h) ? "State of slot %u loaded" : "Slot %u is empty", h.slot);
       h.menu.close();
       break;
-    case kSlot: {
-      h.slot = h.slot % kSlots + 1;
+    case kSlot:
+    case kDisc: {
+      if (pause_item(h, h.menu.focus()) == kSlot) {
+        h.slot = h.slot % kSlots + 1;
+      } else {
+        change_disc(h, now);
+      }
       const size_t focus = h.menu.focus();
       open_pause(h);
       h.menu.set_focus(focus);
@@ -329,6 +376,15 @@ int play(Host& h) {
                 h.lifecycle.files_dir()[0] ? h.lifecycle.files_dir() : "(none)");
   if (!h.lifecycle.send_ready()) return 1;
   open_games(h);
+  if (h.start_game) {
+    const int found = h.files.find(h.start_game);
+    if (found >= 0 && load_game(h, static_cast<size_t>(found))) {
+      h.menu.close();
+      h.menu_kind = kMenuClosed;
+    } else if (found < 0) {
+      app::log_info("--game %s: not in the files folder", h.start_game);
+    }
+  }
   while (!h.lifecycle.stopping() && !h.quit) {
     const uint64_t now = app::monotonic_ms();
     input(h, now);
@@ -364,7 +420,9 @@ Host::Host(const HostConfig& c)
       sram_hash(0),
       sram_checked_ms(0),
       slot(1),
+      start_game(NULL),
       menu_kind(kMenuClosed),
+      menu_disc(false),
       sound(true),
       show_fps(false),
       frameskip(0),
@@ -379,6 +437,7 @@ Host::Host(const HostConfig& c)
       quit(false) {
   memset(&info, 0, sizeof(info));
   memset(&av, 0, sizeof(av));
+  memset(&disk, 0, sizeof(disk));
   extensions[0] = game[0] = notice[0] = '\0';
   extension_list[0] = NULL;
   frame_options.aspect = frontend::kAspectDisplay;
@@ -391,6 +450,9 @@ int run(int argc, char** argv, const HostConfig& config) {
   if (!config.profiles) return 2;
   Host* h = new (std::nothrow) Host(config);
   if (!h) return 1;
+  for (int i = 1; i + 1 < argc; ++i) {
+    if (strcmp(argv[i], "--game") == 0) h->start_game = argv[++i];
+  }
   int rc = h->lifecycle.init(argc, argv);
   if (rc == 0) {
     app::log_install_crash_handlers();

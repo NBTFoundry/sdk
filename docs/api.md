@@ -243,6 +243,14 @@ Save state, Load state, Slot, Reset, Choose another game, Quit). The menu
 opens with a pad's Guide button or its View and Menu together, the iDrive
 MENU key or a BACK hold; a long BACK hold quits.
 
+A core with several discs for a game (`SET_DISK_CONTROL_INTERFACE` or its
+`_EXT` form, e.g. from an `.m3u` list) gets a "Disc: n of N" row after Slot:
+choosing it opens the lid, puts in the next disc and closes the lid. The
+core's system folder (BIOS files) is the data folder, or the files folder
+with `HostConfig::system_in_files`, so users add BIOS files as they add
+games. `--game NAME` starts that file of the files folder instead of
+showing the list (VM runs, measurements); an unknown name shows the list.
+
 The front end's own settings: `aspect` (`4-3`, `pixel`, `full`), `filter`
 (`sharp`, `smooth`, `nearest`), `sound`, `frameskip` (`off`, `auto`, `1`,
 `2`: frames the core runs without drawing, for a core that asks with

@@ -65,6 +65,7 @@ int main(int argc, char** argv) {
   Profiles profiles = {{&kPad, NULL, NULL, NULL}, &kController, &kKeyboard};
   nbt::retro::HostConfig config = {"fake", "NBT fake core", "Fake console",
                                    NULL,   &profiles,       kVariables,
-                                   1,      4.0f / 3.0f,     1024 * 1024};
+                                   1,      4.0f / 3.0f,     1024 * 1024,
+                                   true /* BIOS files in the files folder */};
   return nbt::retro::run(argc, argv, config);
 }

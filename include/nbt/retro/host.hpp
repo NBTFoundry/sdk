@@ -29,12 +29,16 @@ struct HostConfig {
   float display_aspect;
   /* The largest game file read into memory. */
   size_t max_file_bytes;
+  /* The core's system folder (BIOS files): the files folder when true, so
+   * users add them as they add games; the data folder otherwise. */
+  bool system_in_files;
 };
 
 /* The application: the bridge's lifecycle (a health check only reports
  * ready), the window, the sound, the controls, a game list from the files
  * folder (NBT_FILES_DIR), battery saves and save states in NBT_DATA_DIR, a
- * pause menu and the front end's own settings:
+ * pause menu (with a disc row for a core with several discs) and the front
+ * end's own settings:
  *
  *   aspect    4-3 | pixel | full      the frame's shape on the panel
  *   filter    sharp | smooth | nearest
@@ -44,7 +48,8 @@ struct HostConfig {
  *   show_fps  off | on
  *   debug_log off | on
  *
- * Returns main()'s exit status. */
+ * "--game NAME" starts that file of the files folder instead of showing the
+ * list (tests, measurements). Returns main()'s exit status. */
 int run(int argc, char** argv, const HostConfig& config);
 
 }  // namespace retro

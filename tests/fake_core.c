@@ -6,7 +6,9 @@
  *
  *   init | deinit | reset
  *   load <path> size=<n>
+ *   system <directory>    (GET_SYSTEM_DIRECTORY, after load)
  *   unload
+ *   disc eject=<0|1> | disc index=<n>   (a game starting "DISCS" has two)
  *   input mask=<hex>      (when port 0's joypad changes)
  *   option core_region=<value>
  *   serialize | unserialize frame=<n>
@@ -28,6 +30,8 @@ static unsigned char sram[8192];
 static unsigned frame, counted, drawn;
 static int16_t last_mask = -1;
 static char region[32];
+static unsigned disc_count = 1, disc_index;
+static bool disc_ejected;
 
 static void say(const char* fmt, ...) {
   va_list ap;
@@ -38,11 +42,42 @@ static void say(const char* fmt, ...) {
   fflush(stdout);
 }
 
+static bool RETRO_CALLCONV set_eject(bool ejected) {
+  disc_ejected = ejected;
+  say("disc eject=%d", ejected ? 1 : 0);
+  return true;
+}
+static bool RETRO_CALLCONV get_eject(void) {
+  return disc_ejected;
+}
+static unsigned RETRO_CALLCONV get_index(void) {
+  return disc_index;
+}
+static bool RETRO_CALLCONV set_index(unsigned index) {
+  if (!disc_ejected || index >= disc_count) return false;
+  disc_index = index;
+  say("disc index=%u", index);
+  return true;
+}
+static unsigned RETRO_CALLCONV get_count(void) {
+  return disc_count;
+}
+static bool RETRO_CALLCONV get_label(unsigned index, char* label, size_t len) {
+  snprintf(label, len, "Side %c", 'A' + (int)index);
+  return true;
+}
+
 void retro_set_environment(retro_environment_t cb) {
   static const struct retro_variable variables[] = {{"core_region", "Region; auto|NTSC|PAL"},
                                                     {NULL, NULL}};
+  static const struct retro_disk_control_ext_callback disk = {
+      set_eject, get_eject, get_index, set_index, get_count, NULL, NULL, NULL, NULL, get_label};
+  unsigned version = 0;
   environ_cb = cb;
   cb(RETRO_ENVIRONMENT_SET_VARIABLES, (void*)variables);
+  if (cb(RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION, &version) && version >= 1) {
+    cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, (void*)&disk);
+  }
 }
 void retro_set_video_refresh(retro_video_refresh_t cb) {
   video_cb = cb;
@@ -160,8 +195,13 @@ void retro_cheat_set(unsigned index, bool enabled, const char* code) {
 }
 
 bool retro_load_game(const struct retro_game_info* game) {
+  const char* system = NULL;
   if (!game || !game->data) return false;
   say("load %s size=%u", game->path, (unsigned)game->size);
+  if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system) && system) say("system %s", system);
+  disc_count = game->size >= 5 && memcmp(game->data, "DISCS", 5) == 0 ? 2 : 1;
+  disc_index = 0;
+  disc_ejected = false;
   return game->size > 0 && memcmp(game->data, "BAD", 3) != 0;
 }
 

@@ -71,6 +71,32 @@ bool RETRO_CALLCONV environment(unsigned cmd, void* data) {
     case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY:
       return true;
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
+      if (h->config.system_in_files && h->lifecycle.files_dir()[0]) {
+        *static_cast<const char**>(data) = h->lifecycle.files_dir();
+        return true;
+      }
+      *static_cast<const char**>(data) = h->lifecycle.data_dir()[0] ? h->lifecycle.data_dir() : ".";
+      return true;
+    case RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION:
+      *static_cast<unsigned*>(data) = 1;
+      return true;
+    case RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE: {
+      /* The first members of the extended interface. */
+      const struct retro_disk_control_callback* d = static_cast<const struct retro_disk_control_callback*>(data);
+      memset(&h->disk, 0, sizeof(h->disk));
+      if (d) memcpy(&h->disk, d, sizeof(*d));
+      return true;
+    }
+    case RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE: {
+      const struct retro_disk_control_ext_callback* d =
+          static_cast<const struct retro_disk_control_ext_callback*>(data);
+      if (d) {
+        h->disk = *d;
+      } else {
+        memset(&h->disk, 0, sizeof(h->disk));
+      }
+      return true;
+    }
     case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
     case RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY:
       *static_cast<const char**>(data) = h->lifecycle.data_dir()[0] ? h->lifecycle.data_dir() : ".";

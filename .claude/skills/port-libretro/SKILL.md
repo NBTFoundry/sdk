@@ -22,7 +22,13 @@ Example: nf-snes9x (`src/main.cpp`, `src/controls.*`). The SDK's
      settings (setting value, core value pairs); a value the core does not
      list is never given to it;
    - `display_aspect` (4:3 for most consoles; 0 = the core's);
-   - `max_file_bytes`: the largest game read into memory.
+   - `max_file_bytes`: the largest game read into memory (a core with
+     `need_fullpath` reads its files itself);
+   - `system_in_files`: the core finds BIOS files in the files folder, where
+     users put them (list their extensions in `--bridge-files`, not in
+     `extensions`).
+   Multi-disc games (`.m3u`) get a disc row in the pause menu when the core
+   offers disc control; nothing to configure.
 3. **Settings.** The host owns `aspect`, `filter`, `sound`, `frameskip`,
    `show_fps`, `debug_log`; declare those you keep, plus core settings, in
    `release/package.args` (12 at most). Check which core variables matter
@@ -33,3 +39,5 @@ Example: nf-snes9x (`src/main.cpp`, `src/controls.*`). The SDK's
 5. **Check** on the desktop:
    `NBT_FILES_DIR=<games> NBT_DATA_DIR=<tmp> ./build/nbt-<name>-host`: the
    list shows, a game runs with sound, the menu saves and loads a state.
+   `--game <file>` skips the list: the way to run a game in the VM, which has
+   no input.

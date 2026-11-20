@@ -54,6 +54,9 @@ struct Host {
   char extensions[128]; /* the core's valid_extensions, '|' separated */
   const char* extension_list[17];
   char extension_store[16][9];
+  /* Its disc control (SET_DISK_CONTROL_(EXT_)INTERFACE); members it does
+   * not give are NULL. */
+  struct retro_disk_control_ext_callback disk;
 
   /* The game. */
   bool loaded;
@@ -64,7 +67,9 @@ struct Host {
   unsigned slot;
 
   /* The front end. */
+  const char* start_game; /* --game: a file to start instead of the list */
   MenuKind menu_kind;
+  bool menu_disc; /* the pause menu has the disc row */
   frontend::FrameOptions frame_options;
   bool sound, show_fps;
   int frameskip;    /* 0 off, -1 auto, n: draw one frame in n + 1 */

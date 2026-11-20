@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: MPL-2.0
+# The host build and tests (plain and with ASan/UBSan; the window tests under
+# Xvfb), and the module and guest test payloads built with the NBT toolchain
+# release the SDK pins. QNX builds and the QNX 6.5 VM need the QNX SDP and run
+# locally (docs/native-apps.md).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  host:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: >-
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libx11-dev libegl-dev libgles-dev xvfb libegl-mesa0 libgl1-mesa-dri
+      - run: make -j"$(nproc)" host
+      - run: make test check-static-init
+      - run: make -j"$(nproc)" test-asan
+
+  payloads:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: make toolchain
+      - run: make -j"$(nproc)" module-probe guest-probe car-probe smoke-module
+      - run: make -j"$(nproc)" BUILD_DIR=build/unaligned NBT_MOD_UNALIGNED=1 module-probe guest-probe car-probe smoke-module

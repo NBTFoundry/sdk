@@ -13,6 +13,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <asm/hwcap.h>
+#include <sys/auxv.h>
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
@@ -293,7 +295,29 @@ static void check_exec_mman(void) {
   check("jit: no file or fixed mappings", ok);
 }
 
-/* 9. unaligned access (only on request) */
+/* 9. what portable code asks and is told no: thread scheduling attributes
+ * (accepted, unused), CPU features (none beyond the baseline) */
+static void check_portable(void) {
+  pthread_attr_t attr;
+  struct sched_param param;
+  memset(&param, 0, sizeof(param));
+  param.sched_priority = 10;
+  pthread_attr_init(&attr);
+  int policy = -1, inherit = -1;
+  int ok = pthread_attr_setschedpolicy(&attr, SCHED_RR) == 0 && pthread_attr_setschedparam(&attr, &param) == 0 &&
+           pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED) == ENOTSUP &&
+           pthread_attr_getinheritsched(&attr, &inherit) == 0 && inherit == PTHREAD_INHERIT_SCHED &&
+           pthread_attr_getschedpolicy(&attr, &policy) == 0 && policy == SCHED_OTHER;
+  pthread_t t;
+  ok = ok && pthread_create(&t, &attr, tls_thread, (void*)(intptr_t)7) == 0 && pthread_join(t, NULL) == 0;
+  check("threads: scheduling attributes", ok);
+  errno = 0;
+  ok = (getauxval(AT_HWCAP) & HWCAP_NEON) == 0 && getauxval(AT_HWCAP2) == 0 && errno == 0;
+  ok = ok && getauxval(3) == 0 && errno == ENOENT;
+  check("cpu: no optional features reported", ok);
+}
+
+/* 10. unaligned access (only on request) */
 static void check_unaligned(void) {
   static unsigned char bytes[8] = {0, 1, 2, 3, 4, 5, 6, 7};
   volatile uint32_t* p = (volatile uint32_t*)(void*)(bytes + 1);
@@ -331,6 +355,7 @@ int main(int argc, char** argv) {
   check_files();
   check_exec_memory();
   check_exec_mman();
+  check_portable();
   probe_cxx();
   for (int i = 1; i < argc; ++i)
     if (strcmp(argv[i], "--unaligned") == 0) check_unaligned();

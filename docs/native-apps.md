@@ -55,6 +55,8 @@ The C library still declares these functions, so portable code links (`module/ru
 
 JIT compilers work as on Linux (`module/runtime/mman.c`, toolchain 1.1.0 or newer): anonymous `mmap` (pages committed on first use, zeroed), `munmap`, `mprotect` with `PROT_EXEC` (writable and executable at once, or one after the other; static memory too), and `__builtin___clear_cache` before running written code.
 
+Portable code's probes get plain answers (toolchain 1.1.0 or newer): thread scheduling attributes are accepted and unused, as POSIX has it under `PTHREAD_INHERIT_SCHED` (`PTHREAD_EXPLICIT_SCHED` fails with `ENOTSUP`); `getauxval(AT_HWCAP)` and `AT_HWCAP2` report no optional CPU feature (`<asm/hwcap.h>` has the bits), so code takes its baseline paths: no NEON.
+
 ## The runner
 
 `make nbt-runner` builds it with the QNX SDP (`QNX_ENV`, `QNX_SCREEN_LIBDIR`). It is an ordinary NBT application: it takes the manager's bridge descriptors, then runs the payload named by `--nbt-payload PATH`. With no `--nbt-payload`, it runs a payload appended to its own executable, copied to the data folder (or `/dev/shmem`). Before running anything, it checks the payload's `.note.nbt` (ABI major and minor, module or guest).

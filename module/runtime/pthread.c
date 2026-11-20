@@ -120,6 +120,36 @@ int pthread_attr_getdetachstate(const pthread_attr_t* attr, int* state) {
   return 0;
 }
 
+/* Threads take the application's scheduling (the host offers no other): the
+ * attributes are checked and, as under PTHREAD_INHERIT_SCHED, unused. */
+int pthread_attr_setinheritsched(pthread_attr_t* attr, int inherit) {
+  (void)attr;
+  return inherit == PTHREAD_INHERIT_SCHED ? 0 : inherit == PTHREAD_EXPLICIT_SCHED ? ENOTSUP : EINVAL;
+}
+int pthread_attr_getinheritsched(const pthread_attr_t* attr, int* inherit) {
+  (void)attr;
+  *inherit = PTHREAD_INHERIT_SCHED;
+  return 0;
+}
+int pthread_attr_setschedpolicy(pthread_attr_t* attr, int policy) {
+  (void)attr;
+  return policy == SCHED_OTHER || policy == SCHED_FIFO || policy == SCHED_RR ? 0 : EINVAL;
+}
+int pthread_attr_getschedpolicy(const pthread_attr_t* attr, int* policy) {
+  (void)attr;
+  *policy = SCHED_OTHER;
+  return 0;
+}
+int pthread_attr_setschedparam(pthread_attr_t* attr, const struct sched_param* param) {
+  (void)attr;
+  return param ? 0 : EINVAL;
+}
+int pthread_attr_getschedparam(const pthread_attr_t* attr, struct sched_param* param) {
+  (void)attr;
+  memset(param, 0, sizeof(*param));
+  return 0;
+}
+
 int pthread_create(pthread_t* thread, const pthread_attr_t* attr, void* (*fn)(void*), void* arg) {
   struct nbt_thread* t = (struct nbt_thread*)calloc(1, sizeof(*t));
   if (!t) return EAGAIN;

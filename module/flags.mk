@@ -13,7 +13,7 @@
 # The NBT toolchain (github.com/NBTFoundry/toolchains): clang, lld and the
 # runtime every module and guest links statically (picolibc, compiler-rt,
 # libc++), with the C library headers the module runtime implements.
-NBT_TOOLCHAIN_VERSION := 1.0.0
+NBT_TOOLCHAIN_VERSION := 1.1.0
 NBT_TOOLCHAIN ?= $(NBT_MOD_ROOT)/toolchain/nbt-toolchain-$(NBT_TOOLCHAIN_VERSION)
 NBT_LLVM_BIN := $(NBT_TOOLCHAIN)/bin
 NBT_MOD_CC := $(NBT_LLVM_BIN)/clang

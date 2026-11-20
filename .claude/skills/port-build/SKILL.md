@@ -30,6 +30,14 @@ Rules:
 - Upstream's source list comes from upstream: `include` its fragment
   (nf-snes9x: `libretro/Makefile.common`) or run its own Makefile
   (nf-android-auto: `$(MAKE) -C <dir> <target>`). Never copy the list.
+  When upstream's Makefile writes objects next to its sources or sets flags
+  per object, run it in a copy of the submodule per build kind
+  (`rsync -a --exclude .git` into `$(BUILD_DIR)/core/<kind>/`, objects kept)
+  and link the static library it makes (nf-pcsx-rearmed). Pass flags it
+  appends to through the environment (`CFLAGS=... $(MAKE)`): on the command
+  line they would override its own; set `GIT_DIR` to the submodule's for its
+  version string. GNU ld takes from an archive only what is already wanted:
+  list a core archive after the SDK libraries that call it.
 - Upstream objects: `-w` and upstream's defines. Ours:
   `-std=c++11 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti`.
 - Objects per kind in `$(OBJ_DIR)/{host,asan,qnx}/`, built with `-MMD -MP`;

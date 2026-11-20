@@ -55,7 +55,7 @@ READER_FILES := \
 	src/readers/gamepad_wire.cpp:src/sdk/gamepad_wire.cpp \
 	src/readers/gamepad_input.cpp:src/sdk/gamepad_input.cpp
 
-SDK_SRC := $(sort $(wildcard src/*.cpp src/readers/*.cpp))
+SDK_SRC := $(sort $(wildcard src/*.cpp src/*.c src/readers/*.cpp))
 MIXER_SRC := mixer/audio_mixer.cpp
 GLES2_SRC := $(sort $(wildcard gles2/*.c))
 FRONTEND_SRC := $(sort $(wildcard frontend/*.cpp frontend/*.c))

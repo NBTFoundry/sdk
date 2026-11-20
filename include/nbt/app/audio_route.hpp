@@ -32,7 +32,6 @@ class AudioRoute {
   const char* binary_path() const { return path_; }
 
   /* Exposed for unit tests. */
-  static int build_child_env(char** const src_env, char* out[], size_t max_out);
   static uint32_t parse_conn_env(const char* val, uint32_t fallback);
   /* The connection named in <data_dir>/audio-conn (one number, e.g. 0x9a), or
    * `fallback`: selects another of the head unit's audio sources, whose

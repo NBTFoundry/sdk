@@ -11,7 +11,7 @@
 //  - a guest (ET_EXEC, mode 2) runs as a child process with no QNX code in it
 //    and asks for the same services by message (runner/guest_server.c).
 // The payload is --nbt-payload, else one appended to this executable
-// (test packages, runner/payload.h). The runner is the only application-side
+// (test packages, nbt/app/payload.h). The runner is the only application-side
 // code linked with QNX libraries.
 #include <dlfcn.h>
 #include <errno.h>
@@ -28,11 +28,12 @@
 #include "host_sys.h"
 #include "membench.h"
 #include "nbt/app/audio_pcm.hpp"
+#include "nbt/app/child.hpp"
 #include "nbt/app/lifecycle.hpp"
 #include "nbt/app/log.hpp"
+#include "nbt/app/payload.h"
 #include "nbt/app/video.hpp"
 #include "nbt/host_abi.h"
-#include "payload.h"
 #include "run.h"
 
 using nbt::app::AudioPcm;
@@ -156,9 +157,10 @@ void* gl_proc(const char* name) {
 
 /* --- audio --- */
 
-int32_t audio_open(int32_t preferred_rate, nbt_audio_render_fn render, void* context, int32_t route_wanted,
-                   int32_t* rate, int32_t* frag_frames) {
-  if (!g_audio->open(preferred_rate, reinterpret_cast<nbt::app::AudioRenderFn>(render), context, route_wanted != 0))
+int32_t audio_open(int32_t preferred_rate, nbt_audio_render_fn render, void* context,
+                   int32_t route_wanted, int32_t* rate, int32_t* frag_frames) {
+  if (!g_audio->open(preferred_rate, reinterpret_cast<nbt::app::AudioRenderFn>(render), context,
+                     route_wanted != 0))
     return -NBT_EIO;
   *rate = g_audio->sample_rate();
   *frag_frames = g_audio->frag_frames();
@@ -175,45 +177,19 @@ void audio_set_route(int32_t wanted) {
 
 /* --- payload --- */
 
-bool own_executable(char* out, size_t size) {
-#ifdef __QNX__
-  char path[PATH_MAX];
-  if (_cmdname(path) && path[0] == '/' && strlen(path) < size) {
-    strcpy(out, path);
-    return true;
-  }
-  FILE* f = fopen("/proc/self/exefile", "r");
-  if (!f) return false;
-  const bool ok = fgets(out, static_cast<int>(size), f) != NULL;
-  fclose(f);
-  if (ok) out[strcspn(out, "\n")] = '\0';
-  return ok && out[0];
-#else
-  const ssize_t n = readlink("/proc/self/exe", out, size - 1);
-  if (n <= 0) return false;
-  out[n] = '\0';
-  return true;
-#endif
-}
-
 /* The appended payload, copied where it may be loaded: the data folder, else
  * /dev/shmem (data folders may refuse execution). */
 bool extract_payload(const char* data_dir, char* out, size_t size) {
-  char exe[512];
-  if (!own_executable(exe, sizeof(exe))) {
-    nbt::app::log_info("payload: cannot name this executable");
-    out[0] = '\0';
-    return false;
-  }
+  char name[32];
+  snprintf(name, sizeof(name), ".nbt-payload-%d", static_cast<int>(getpid()));
   const char* dirs[] = {data_dir, "/dev/shmem"};
   for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); ++i) {
     if (!dirs[i] || !dirs[i][0]) continue;
-    snprintf(out, size, "%s/.nbt-payload-%d", dirs[i], static_cast<int>(getpid()));
     const char* why = NULL;
-    const int rc = nbt_payload_extract(exe, out, &why);
+    const int rc = nbt::app::extract_own_payload(dirs[i], name, out, size, &why);
     if (rc == 1) return true;
     if (rc == 0) {
-      nbt::app::log_info("payload: none appended to %s", exe);
+      nbt::app::log_info("payload: none appended to this executable");
       break;
     }
     nbt::app::log_info("payload: %s (%s)", why ? why : "?", dirs[i]);
@@ -227,8 +203,8 @@ bool extract_payload(const char* data_dir, char* out, size_t size) {
 void bench_native() {
   nbt_membench m;
   if (nbt_membench_run(&m, g_host.monotonic_ns) != 0) return;
-  nbt::app::log_info("libc.so.3: memcpy %.0f MB/s, memset %.0f MB/s, %.0f ns per malloc+free", m.memcpy_mbs,
-                     m.memset_mbs, m.malloc_ns);
+  nbt::app::log_info("libc.so.3: memcpy %.0f MB/s, memset %.0f MB/s, %.0f ns per malloc+free",
+                     m.memcpy_mbs, m.memset_mbs, m.malloc_ns);
 }
 
 }  // namespace
@@ -268,7 +244,8 @@ int main(int argc, char** argv) {
   const char* fake = getenv("NBT_RUNNER_FAKE_GL");
   if (fake && strcmp(fake, "1") == 0) runner_fake_gl(&g_host); /* tests without a GPU */
   const char* fake_audio = getenv("NBT_RUNNER_FAKE_AUDIO");
-  if (fake_audio && strcmp(fake_audio, "1") == 0) runner_fake_audio(&g_host); /* without a sound card */
+  if (fake_audio && strcmp(fake_audio, "1") == 0)
+    runner_fake_audio(&g_host); /* without a sound card */
 
   /* The payload, and the application's own arguments (no bridge ones). */
   char payload[1024] = "";

@@ -10,7 +10,7 @@ has no static constructors. On the head unit it targets QNX 6.5 ARMv7.
 ```mermaid
 flowchart LR
   APP["Your application"] --> MIXER["libnbt-audio-mixer<br/>AudioMixer"]
-  APP --> SDK["libnbt-sdk<br/>Lifecycle · Settings · Log<br/>VideoEgl · AudioPcm · AudioRoute<br/>InputMixer · BackGesture<br/>controller &amp; gamepad readers"]
+  APP --> SDK["libnbt-sdk<br/>Lifecycle · Settings · Log<br/>VideoEgl · AudioPcm · AudioRoute<br/>InputMixer · BackGesture · child programs<br/>controller &amp; gamepad readers"]
   APP --> GLES2["libnbt-gles2<br/>GL1 → GLES2 shim"]
   MIXER --> SDK
 ```
@@ -187,6 +187,28 @@ it. `FileList::load(dir, extensions)` lists it: regular files with names the
 manager stores, the given extensions in any case, sorted without regard to
 case, at most 512. `read(i, max, &size)` reads one into memory without
 following a link. Saves and the like belong in `data_dir()`.
+
+## Other programs — `nbt/app/child.hpp`, `nbt/app/payload.h`
+
+An application may start the head unit's tools, or a companion program it
+carries: a second executable appended to its own (`$(NBT_SDK_APPEND) app
+companion out`, `tools/nbt_payload.py`), so the manager still installs one
+signed file.
+
+- `extract_own_payload(dir, name, out, size, &why)` copies the appended
+  program to `<dir>/<name>` (mode 0700), normally into `data_dir()`.
+- `spawn_child(path, argv, envp, fds, count, own_group, &pid)` starts a
+  program with a descriptor map (the child's descriptor i is `fds[i]`, -1
+  closed, nothing else inherited), default signal actions and an empty mask:
+  QNX `spawn()`, since QNX 6.5's `fork()` fails in a process with threads.
+  With `own_group` it leads its own process group.
+- `child_environment(environ, first, out, max)` gives a child `first` and
+  then this process's environment without `LD_PRELOAD` (iDrive preloads its
+  graphics stack) or the variables `first` sets.
+- `child_exited(pid, &status)` and `stop_child(pid, group, wait_ms,
+  term_ms)`: a grace period, then SIGTERM, then SIGKILL.
+
+Modules and guests cannot start programs: there these report `ENOSYS`.
 
 ## Front end — `libnbt-frontend`, `nbt/frontend/`
 

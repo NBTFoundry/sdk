@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+#include <errno.h>
 #include <fcntl.h>
 #include <math.h>
 #include <signal.h>
@@ -9,16 +10,19 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "nbt/app/audio_mixer.hpp"
 #include "nbt/app/audio_route.hpp"
 #include "nbt/app/back_gesture.hpp"
 #include "nbt/app/bridge.hpp"
+#include "nbt/app/child.hpp"
 #include "nbt/app/input_mixer.hpp"
 #include "nbt/app/lifecycle.hpp"
 #include "nbt/app/log.hpp"
 #include "nbt/app/parse.hpp"
+#include "nbt/app/payload.h"
 #include "nbt/app/settings.hpp"
 #include "nbt/app/version.hpp"
 #include "nbt/app/video.hpp"
@@ -675,15 +679,6 @@ void test_audio_route() {
   CHECK(AudioRoute::conn_file(dir, 0xb8u) == 0xb8u);
   CHECK(rmdir(file) == 0 && rmdir(dir) == 0);
 
-  char e1[] = "PATH=/bin";
-  char e2[] = "LD_PRELOAD=/opt/sys/lib/libEGL_X.gpp.so";
-  char e3[] = "FOO=bar";
-  char* src_env[4] = {e1, e2, e3, NULL};
-  char* out_env[4] = {NULL, NULL, NULL, NULL};
-  const int cnt = AudioRoute::build_child_env(src_env, out_env, 4);
-  CHECK(cnt == 2);
-  CHECK(strcmp(out_env[0], e1) == 0 && strcmp(out_env[1], e3) == 0 && out_env[2] == NULL);
-
   char tmp_dir[64];
   make_temp_dir(tmp_dir, sizeof(tmp_dir), "route");
   char script_path[128], log_path[128];
@@ -758,6 +753,119 @@ void test_audio_route() {
   g_tests_run++;
 }
 
+/* The output a child wrote to `fd` until it closed it. */
+void read_all(int fd, char* out, size_t size) {
+  size_t used = 0;
+  for (;;) {
+    const ssize_t n = read(fd, out + used, size - 1 - used);
+    if (n <= 0) break;
+    used += static_cast<size_t>(n);
+    if (used + 1 >= size) break;
+  }
+  out[used] = '\0';
+}
+
+void test_child() {
+  char e1[] = "PATH=/bin";
+  char e2[] = "LD_PRELOAD=/opt/sys/lib/libEGL_X.gpp.so";
+  char e3[] = "FOO=bar";
+  char e4[] = "MODE=old";
+  char* src_env[5] = {e1, e2, e3, e4, NULL};
+  char f1[] = "MODE=new";
+  char* first[2] = {f1, NULL};
+  char* out_env[5];
+  CHECK(child_environment(src_env, NULL, out_env, 5) == 3);
+  CHECK(strcmp(out_env[0], e1) == 0 && strcmp(out_env[1], e3) == 0 && out_env[3] == NULL);
+  CHECK(child_environment(src_env, first, out_env, 5) == 3); /* MODE from `first` only */
+  CHECK(out_env[0] == f1 && out_env[1] == e1 && out_env[2] == e3 && out_env[3] == NULL);
+  CHECK(child_environment(src_env, first, out_env, 3) == -1); /* does not fit */
+
+  /* The map: 0 = /dev/null, 1 and 2 = a pipe, 3 = another pipe; nothing else. */
+  int out_pipe[2], extra_pipe[2];
+  CHECK(pipe(out_pipe) == 0 && pipe(extra_pipe) == 0);
+  const int null_fd = open("/dev/null", O_RDONLY);
+  const int leak = open("/dev/null", O_RDONLY); /* not in the map */
+  CHECK(null_fd >= 0 && leak >= 0);
+  char script[160];
+  snprintf(script, sizeof(script),
+           "echo out$FOO; echo three >&3; if [ -e /proc/self/fd/%d ]; then echo leak; fi", leak);
+  char sh[] = "/bin/sh", dash_c[] = "-c";
+  char* argv[] = {sh, dash_c, script, NULL};
+  const int fds[4] = {null_fd, out_pipe[1], out_pipe[1], extra_pipe[1]};
+  pid_t pid = -1;
+  CHECK(spawn_child("/bin/sh", argv, out_env, fds, 4, true, &pid) == 0 && pid > 0);
+  close(out_pipe[1]);
+  close(extra_pipe[1]);
+  char text[64];
+  read_all(out_pipe[0], text, sizeof(text));
+  CHECK(strcmp(text, "outbar\n") == 0);
+  read_all(extra_pipe[0], text, sizeof(text));
+  CHECK(strcmp(text, "three\n") == 0);
+  int status = -1;
+  CHECK(stop_child(pid, true, 2000, 1000) >= 0);
+  CHECK(child_exited(pid, &status)); /* already reaped: ECHILD counts as exited */
+  close(out_pipe[0]);
+  close(extra_pipe[0]);
+  close(leak);
+
+  /* A program that cannot be executed is an error, as spawn() reports it. */
+  char missing[] = "/nonexistent/program";
+  char* argv2[] = {missing, NULL};
+  CHECK(spawn_child(missing, argv2, out_env, fds, 1, false, &pid) == ENOENT);
+  CHECK(spawn_child(missing, argv2, out_env, fds, 0, false, &pid) == EINVAL);
+
+  /* A child that ignores nothing ends with SIGTERM; one that ignores it, with SIGKILL. */
+  char sleeper[] = "exec sleep 30";
+  char trapper[] = "trap '' TERM; while :; do sleep 1; done";
+  char* argv3[] = {sh, dash_c, sleeper, NULL};
+  CHECK(spawn_child("/bin/sh", argv3, out_env, fds, 1, true, &pid) == 0);
+  CHECK(!child_exited(pid, NULL));
+  status = stop_child(pid, true, 50, 2000);
+  CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGTERM);
+  char* argv4[] = {sh, dash_c, trapper, NULL};
+  CHECK(spawn_child("/bin/sh", argv4, out_env, fds, 1, true, &pid) == 0);
+  usleep(200000); /* the trap is set */
+  status = stop_child(pid, true, 50, 300);
+  CHECK(WIFSIGNALED(status) && WTERMSIG(status) == SIGKILL);
+  close(null_fd);
+
+  /* This executable, and the payload it does not carry. */
+  char exe[512];
+  CHECK(own_executable(exe, sizeof(exe)) && exe[0] == '/');
+  char dir[64], path[160];
+  make_temp_dir(dir, sizeof(dir), "child");
+  const char* why = NULL;
+  CHECK(extract_own_payload(dir, "companion", path, sizeof(path), &why) == 0);
+  CHECK(extract_own_payload(dir, "../escape", path, sizeof(path), &why) == -1);
+
+  /* An appended payload: <executable><payload><"NBTPAYLD"><size>. */
+  char carrier[160], copy[160];
+  snprintf(carrier, sizeof(carrier), "%s/carrier", dir);
+  snprintf(copy, sizeof(copy), "%s/copy", dir);
+  const char body[] = "#!/bin/sh\necho hi\n";
+  const uint64_t size = sizeof(body) - 1;
+  FILE* f = fopen(carrier, "wb");
+  CHECK(f != NULL);
+  CHECK(fwrite("\177ELF-not-really", 1, 15, f) == 15 && fwrite(body, 1, size, f) == size);
+  uint8_t trailer[NBT_PAYLOAD_TRAILER_SIZE];
+  memcpy(trailer, NBT_PAYLOAD_TRAILER_MAGIC, 8);
+  for (int i = 0; i < 8; ++i) trailer[8 + i] = static_cast<uint8_t>(size >> (8 * i));
+  CHECK(fwrite(trailer, 1, sizeof(trailer), f) == sizeof(trailer) && fclose(f) == 0);
+  CHECK(nbt_payload_extract(carrier, copy, &why) == 1);
+  struct stat st;
+  CHECK(stat(copy, &st) == 0 && st.st_size == static_cast<off_t>(size) &&
+        (st.st_mode & 0777) == 0700);
+  CHECK(unlink(copy) == 0);
+  trailer[8] = 0xff; /* larger than the file */
+  f = fopen(carrier, "r+b");
+  CHECK(f != NULL && fseek(f, -8, SEEK_END) == 0 && fwrite(trailer + 8, 1, 8, f) == 8 &&
+        fclose(f) == 0);
+  CHECK(nbt_payload_extract(carrier, copy, &why) == -1);
+  CHECK(unlink(copy) != 0); /* nothing left behind */
+  CHECK(unlink(carrier) == 0 && rmdir(dir) == 0);
+  g_tests_run++;
+}
+
 void test_host_keys() {
   CHECK(host_key_from_x11_keysym(0xff1b) == kHostKeyEscape);    /* XK_Escape */
   CHECK(host_key_from_x11_keysym(0xff0d) == kHostKeyReturn);    /* XK_Return */
@@ -784,6 +892,7 @@ int main() {
   test_audio_mixer();
   test_log();
   test_audio_route();
+  test_child();
   test_host_keys();
   printf("ALL %d SDK UNIT TEST SUITES PASSED\n", g_tests_run);
   return 0;

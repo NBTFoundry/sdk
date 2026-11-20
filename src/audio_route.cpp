@@ -5,9 +5,6 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
-#ifdef __QNXNTO__
-#include <spawn.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,6 +13,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "nbt/app/child.hpp"
 #include "nbt/app/clock.hpp"
 #include "nbt/app/log.hpp"
 
@@ -30,7 +28,7 @@ const uint32_t kDefaultConnId = 0xb8u;
 const int kChildTimeoutMs = 5000;
 const int kMaxRetries = 5;
 const unsigned kRetryDelaysMs[kMaxRetries] = {2000u, 3000u, 5000u, 5000u, 5000u};
-const size_t kChildEnvMax = 128;
+const size_t kChildEnvMax = 512;
 
 void trim_output(char* s) {
   if (!s) return;
@@ -70,19 +68,6 @@ uint32_t AudioRoute::conn_file(const char* data_dir, uint32_t fallback) {
   if (!read) return fallback;
   line[strcspn(line, "\r\n")] = '\0';
   return parse_conn_env(line, fallback);
-}
-
-int AudioRoute::build_child_env(char** const src_env, char* out[], size_t max_out) {
-  if (!out || max_out == 0) return 0;
-  size_t count = 0;
-  if (src_env) {
-    for (char** p = src_env; *p && count + 1 < max_out; ++p) {
-      if (strncmp(*p, "LD_PRELOAD=", 11) == 0) continue;
-      out[count++] = *p;
-    }
-  }
-  out[count] = NULL;
-  return static_cast<int>(count);
 }
 
 AudioRoute::AudioRoute()
@@ -245,21 +230,19 @@ int AudioRoute::run_audioconn(const char* path, char op, uint32_t conn_id, char*
   char* argv[4] = {const_cast<char*>(path), flag_arg, conn_arg, NULL};
 
   char* envp[kChildEnvMax];
-  build_child_env(environ, envp, kChildEnvMax);
+  if (child_environment(environ, NULL, envp, kChildEnvMax) < 0) {
+    close(pipefd[0]);
+    close(pipefd[1]);
+    if (out_buf && out_size > 1) snprintf(out_buf, out_size, "environment too large");
+    return -1;
+  }
 
-#ifdef __QNXNTO__
-  /* QNX 6.5 fork() returns -1 (ENOSYS) in a multithreaded process (libasound/SDL threads). */
   int nullfd = open("/dev/null", O_RDONLY);
-  int fdmap[3] = {nullfd >= 0 ? nullfd : SPAWN_FDCLOSED, pipefd[1], pipefd[1]};
-  struct inheritance inherit;
-  memset(&inherit, 0, sizeof(inherit));
-  inherit.flags = SPAWN_SETSIGDEF | SPAWN_SETSIGMASK;
-  sigfillset(&inherit.sigdefault);
-  sigemptyset(&inherit.sigmask);
-  pid_t pid = ::spawn(path, 3, fdmap, &inherit, argv, envp);
-  int spawn_err = errno;
+  const int fds[3] = {nullfd, pipefd[1], pipefd[1]};
+  pid_t pid = -1;
+  const int spawn_err = spawn_child(path, argv, envp, fds, 3, false, &pid);
   if (nullfd >= 0) close(nullfd);
-  if (pid < 0) {
+  if (spawn_err != 0) {
     close(pipefd[0]);
     close(pipefd[1]);
     if (out_buf && out_size > 1) {
@@ -267,31 +250,6 @@ int AudioRoute::run_audioconn(const char* path, char op, uint32_t conn_id, char*
     }
     return -1;
   }
-#else
-  pid_t pid = fork();
-  if (pid < 0) {
-    int fork_err = errno;
-    close(pipefd[0]);
-    close(pipefd[1]);
-    if (out_buf && out_size > 1) {
-      snprintf(out_buf, out_size, "fork errno %d (%s)", fork_err, strerror(fork_err));
-    }
-    return -1;
-  }
-  if (pid == 0) {
-    int nullfd = open("/dev/null", O_RDONLY);
-    if (nullfd >= 0) {
-      if (nullfd != STDIN_FILENO) (void)dup2(nullfd, STDIN_FILENO);
-      if (nullfd > STDERR_FILENO) (void)close(nullfd);
-    }
-    if (pipefd[1] != STDOUT_FILENO) (void)dup2(pipefd[1], STDOUT_FILENO);
-    if (pipefd[1] != STDERR_FILENO) (void)dup2(pipefd[1], STDERR_FILENO);
-    if (pipefd[0] > STDERR_FILENO) (void)close(pipefd[0]);
-    if (pipefd[1] > STDERR_FILENO) (void)close(pipefd[1]);
-    execve(path, argv, envp);
-    _exit(127);
-  }
-#endif
 
   close(pipefd[1]);
   size_t used = 0;

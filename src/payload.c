@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-#include "payload.h"
+#include "nbt/app/payload.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -11,7 +11,9 @@
 
 enum { kMaxPayload = 64 << 20, kNoteName = 0x0054424e /* "NBT\0" */ };
 
-static uint16_t rd16(const uint8_t* p) { return (uint16_t)(p[0] | p[1] << 8); }
+static uint16_t rd16(const uint8_t* p) {
+  return (uint16_t)(p[0] | p[1] << 8);
+}
 static uint32_t rd32(const uint8_t* p) {
   return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
@@ -48,9 +50,12 @@ int nbt_payload_parse(const uint8_t* d, size_t size, nbt_payload_info* out, cons
         out->abi_major = rd32(desc);
         out->abi_minor = rd32(desc + 4);
         out->mode = rd32(desc + 8);
-        if (out->mode == NBT_PAYLOAD_MODULE && type != 3 /* ET_DYN */) return fail(why, "module is not ET_DYN");
-        if (out->mode == NBT_PAYLOAD_GUEST && type != 2 /* ET_EXEC */) return fail(why, "guest is not ET_EXEC");
-        if (out->mode != NBT_PAYLOAD_MODULE && out->mode != NBT_PAYLOAD_GUEST) return fail(why, "unknown mode");
+        if (out->mode == NBT_PAYLOAD_MODULE && type != 3 /* ET_DYN */)
+          return fail(why, "module is not ET_DYN");
+        if (out->mode == NBT_PAYLOAD_GUEST && type != 2 /* ET_EXEC */)
+          return fail(why, "guest is not ET_EXEC");
+        if (out->mode != NBT_PAYLOAD_MODULE && out->mode != NBT_PAYLOAD_GUEST)
+          return fail(why, "unknown mode");
         return 0;
       }
       pos += 12 + name_room + desc_room;
@@ -88,14 +93,14 @@ int nbt_payload_read(const char* path, nbt_payload_info* out, const char** why) 
 
 int nbt_payload_extract(const char* exe, const char* out_path, const char** why) {
   int fd = open(exe, O_RDONLY);
-  if (fd < 0) return fail(why, "cannot open the runner");
+  if (fd < 0) return fail(why, "cannot open the executable");
   struct stat st;
   uint8_t trailer[NBT_PAYLOAD_TRAILER_SIZE];
   if (fstat(fd, &st) != 0 || st.st_size < NBT_PAYLOAD_TRAILER_SIZE ||
       lseek(fd, st.st_size - NBT_PAYLOAD_TRAILER_SIZE, SEEK_SET) < 0 ||
       read(fd, trailer, sizeof(trailer)) != (ssize_t)sizeof(trailer)) {
     close(fd);
-    return fail(why, "cannot read the runner");
+    return fail(why, "cannot read the executable");
   }
   if (memcmp(trailer, NBT_PAYLOAD_TRAILER_MAGIC, 8) != 0) {
     close(fd);

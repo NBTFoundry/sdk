@@ -77,6 +77,10 @@ NBT_SDK_MOD_DEPS = $(NBT_MOD_LINK_DEPS) $(NBT_GUEST_RT_OBJS)
 #   $(NBT_SDK_BUNDLE) app.so app-bundle
 NBT_SDK_RUNNER = $(NBT_SDK_BUILD_DIR)/nbt-runner
 NBT_SDK_BUNDLE = $(NBT_PYTHON) $(NBT_SDK_ROOT)/tools/nbt_bundle.py $(NBT_SDK_RUNNER)
+# Any payload appended to an application's executable, for a companion program
+# the application starts itself (nbt/app/child.hpp):
+#   $(NBT_SDK_APPEND) app companion app-with-companion
+NBT_SDK_APPEND = $(NBT_PYTHON) $(NBT_SDK_ROOT)/tools/nbt_payload.py
 
 .PHONY: nbt-sdk-runner nbt-sdk-mod
 nbt-sdk-runner:

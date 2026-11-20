@@ -15,7 +15,7 @@ RUNNER_FLAGS := -Wc,-marm -Irunner -Icommon -I$(GL_STREAM_DIR)
 RUNNER_COMMON_OBJS := $(addprefix $(RUNNER_OBJ)/,host_sys.o module_loader.o guest_server.o gl_runner.o \
 	gl_decode.o)
 NBT_RUNNER := $(BUILD_DIR)/nbt-runner
-NBT_RUNNER_OBJS := $(RUNNER_COMMON_OBJS) $(addprefix $(RUNNER_OBJ)/,nbt_runner.o payload.o fake_gl.o membench.o)
+NBT_RUNNER_OBJS := $(RUNNER_COMMON_OBJS) $(addprefix $(RUNNER_OBJ)/,nbt_runner.o fake_gl.o membench.o)
 RUNNER_PROBE_QNX := $(BUILD_DIR)/runner-probe-qnx
 RUNNER_PROBE_OBJS := $(RUNNER_COMMON_OBJS) $(RUNNER_OBJ)/runner_probe.o
 

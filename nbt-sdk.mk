@@ -55,9 +55,9 @@ nbt-sdk-asan:
 nbt-sdk-qnx:
 	+@$(NBT_SDK_MAKE) libs-qnx
 
-$(NBT_SDK_HOST_LIBS) $(NBT_SDK_FRONT_HOST_LIBS): nbt-sdk-host ;
-$(NBT_SDK_ASAN_LIBS) $(NBT_SDK_FRONT_ASAN_LIBS): nbt-sdk-asan ;
-$(NBT_SDK_QNX_LIBS) $(NBT_SDK_FRONT_QNX_LIBS): nbt-sdk-qnx ;
+$(sort $(NBT_SDK_HOST_LIBS) $(NBT_SDK_FRONT_HOST_LIBS)): nbt-sdk-host ;
+$(sort $(NBT_SDK_ASAN_LIBS) $(NBT_SDK_FRONT_ASAN_LIBS)): nbt-sdk-asan ;
+$(sort $(NBT_SDK_QNX_LIBS) $(NBT_SDK_FRONT_QNX_LIBS)): nbt-sdk-qnx ;
 
 # --- Without the QNX SDP: modules and guests, run by nbt-runner ---
 # (docs/native-apps.md) Compile with $(NBT_MOD_CC) $(NBT_MOD_CFLAGS) or

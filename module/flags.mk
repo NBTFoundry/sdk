@@ -79,7 +79,7 @@ $(filter $(NBT_MOD_RUNTIME)/%,$(NBT_MOD_RT_LIBS)):
 	$(error No NBT toolchain $(NBT_TOOLCHAIN_VERSION) in $(NBT_TOOLCHAIN): run "make toolchain" in the SDK or set NBT_TOOLCHAIN (docs/native-apps.md))
 .DEFAULT_GOAL := $(nbt_mod_goal)
 
-# Payload checks: shape, ABI note, Thumb-state FPU code and, from the link
+# Payload checks: shape, ABI note, no Thumb code and, from the link
 # map, licences (GPL/LGPL objects only in a guest).
 NBT_MOD_CHECK := $(NBT_PYTHON) $(NBT_MOD_ROOT)/tools/check_module.py --readelf $(NBT_MOD_READELF) \
 	--objdump $(NBT_LLVM_BIN)/llvm-objdump

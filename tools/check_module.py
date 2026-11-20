@@ -5,7 +5,7 @@
 
   - ELF32 ARM, EABI5, soft-float base calling convention, int-size enums,
     4-byte wchar_t (in every input, with --map); no program interpreter, no
-    TLS segment, no executable stack; no VFP/NEON code in Thumb state; an NBT
+    TLS segment, no executable stack; no Thumb code; an NBT
     ABI note.
 
 A module (mode A, ET_DYN, loaded by the runner):
@@ -36,22 +36,23 @@ def readelf(tool, *args):
     return out.stdout
 
 
-def thumb_vfp_instructions(objdump, path):
-    """Addresses (with their function) of VFP/NEON instructions in Thumb code.
+def thumb_functions(objdump, path):
+    """Functions (with their first address) that hold Thumb code.
 
     llvm-objdump follows the $a/$t mapping symbols; a Thumb instruction is
     printed as one or two 4-digit halfwords, an ARM one as 8 digits."""
     out = subprocess.run([objdump, "-d", path], check=True, capture_output=True, text=True)
-    found, function = [], "?"
-    line_re = re.compile(r"^\s*([0-9a-f]+):\s+([0-9a-f]{4}(?: [0-9a-f]{4})?)\s+(v[a-z0-9.]+)\b")
+    found, function, seen = [], "?", set()
+    line_re = re.compile(r"^\s*([0-9a-f]+):\s+[0-9a-f]{4}(?: [0-9a-f]{4})?\s+[a-z]")
     for line in out.stdout.splitlines():
         head = re.match(r"^[0-9a-f]+ <([^>]+)>:", line)
         if head:
             function = head.group(1)
             continue
         m = line_re.match(line)
-        if m:
-            found.append("0x%s in %s (%s)" % (m.group(1), function, m.group(3)))
+        if m and function not in seen:
+            seen.add(function)
+            found.append("%s (0x%s)" % (function, m.group(1)))
     return found
 
 
@@ -121,13 +122,13 @@ def check(tool, path, objdump=None, inputs=None):
     else:
         errors += check_module(tool, path)
 
-    # QNX 6.5's lazy FPU switch mishandles a thread's first VFP/NEON
-    # instruction when it is in Thumb state (SIGILL on 6.5.0, a hang on SP1 in
-    # QEMU). Thumb integer code is fine.
+    # No Thumb code at all. In a guest on the car, picolibc's Thumb strcmp died
+    # with SIGILL where ARM code runs; in QEMU, QNX 6.5 mishandles a thread's
+    # first VFP/NEON instruction in Thumb state (SIGILL on 6.5.0, a hang on SP1).
     if objdump:
-        thumb_vfp = thumb_vfp_instructions(objdump, path)
-        if thumb_vfp:
-            errors.append("VFP/NEON instructions in Thumb state (build with -marm): " + ", ".join(thumb_vfp[:5]))
+        thumb = thumb_functions(objdump, path)
+        if thumb:
+            errors.append("Thumb code (build with -marm; assembly in ARM state): " + ", ".join(thumb[:5]))
 
     note = read_nbt_note(path)
     want = MODE_GUEST if guest else MODE_MODULE
@@ -243,7 +244,7 @@ def check_licenses(path, inputs, app_license):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--readelf", default="readelf")
-    parser.add_argument("--objdump", help="llvm-objdump, for the Thumb VFP check")
+    parser.add_argument("--objdump", help="llvm-objdump, for the Thumb code check")
     parser.add_argument("--map", help="the link map (ld.lld -Map): the inputs' licences and ABI")
     parser.add_argument("--app-license", help="SPDX expression of the application's own objects")
     parser.add_argument("modules", nargs="+")

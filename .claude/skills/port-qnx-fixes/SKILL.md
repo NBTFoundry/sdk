@@ -25,6 +25,7 @@ or extra objects), never in the submodule.
 | VM: an appended payload is gone | mkifs rewrites executables | name the file `*-bundle` |
 | VM: no network | io-pkt does not come up on its QEMU board | test networking in the car |
 | VM: a fault on the first FPU instruction in Thumb code | QEMU's kernel bug | modules and guests are built `-marm` (the SDK does it) |
+| Car: a guest or module dies with SIGILL at a 2-byte-aligned `ip` (`terminated SIGILL code=1 fltno=1`) | Thumb code; the VM does not show it | ARM state only: `check_module.py` refuses Thumb code; assembly in ARM state (the module runtime replaces picolibc's Thumb `strlen`, `strcmp`, `memchr`) |
 | VM: `cat` or another tool missing | the boot image holds only what you pass | add it from `$(QNX65_SP1_SYSROOT)/armle-v7/bin` |
 
 A new problem you solve: add a row here (an SDK change, port-sdk-gap) and a

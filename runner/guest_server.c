@@ -43,6 +43,22 @@ static void ring_render(void* context, int16_t* out, int32_t frames) {
   __atomic_store_n(&ctl[NBT_AUDIO_READ_WORD], rd, __ATOMIC_RELEASE);
 }
 
+/* How the guest's frames go, for its log: the first frame presented, then a
+ * count every 3600 (a minute at 60 Hz) and at the end, and the first GL error
+ * the runner's context reports after a frame's commands. */
+static uint32_t g_frames;
+static GLenum g_first_gl_error = GL_NO_ERROR;
+
+static void frame_presented(void) {
+  const GLenum e = nbtgl_fn.GetError ? nbtgl_fn.GetError() : GL_NO_ERROR;
+  ++g_frames;
+  if (e != GL_NO_ERROR && g_first_gl_error == GL_NO_ERROR) {
+    g_first_gl_error = e;
+    printf("runner: GL error 0x%x in frame %u\n", (unsigned)e, (unsigned)g_frames);
+  }
+  if (g_frames == 1 || g_frames % 3600 == 0) printf("runner: %u frames presented\n", (unsigned)g_frames);
+}
+
 static uint8_t guest_msg[sizeof(nbt_guest_req) + NBT_GUEST_MAX_PAYLOAD + NBT_GUEST_MAX_TEXT];
 static uint8_t guest_out[NBT_GUEST_MAX_PAYLOAD + 512];
 
@@ -171,7 +187,10 @@ static void serve(const nbt_host_v1* H, int rcvid, int len) {
       if (!g_gl_loaded) break;
       rep.result = nbtgl_run(g_arena, (uint32_t)req->a);
       if (rep.result < 0) printf("runner: malformed GL commands from the guest\n");
-      if (req->op == NBT_GUEST_VIDEO_SWAP && rep.result == 0) H->video_swap();
+      if (req->op == NBT_GUEST_VIDEO_SWAP && rep.result == 0) {
+        H->video_swap();
+        frame_presented();
+      }
       break;
     case NBT_GUEST_VIDEO_CLOSE: rep.result = CALLED(video_close, H->video_close()); break;
     case NBT_GUEST_AUDIO_OPEN:
@@ -287,6 +306,7 @@ int runner_run_guest(const char* path, char* const argv[], const nbt_host_v1* H,
   else
     printf("runner: arena at %p not answered\n", (void*)arena);
   munmap((void*)arena, NBT_ARENA_SIZE);
+  if (g_gl_loaded) printf("runner: %u frames presented in all\n", (unsigned)g_frames);
   if (hung) {
     printf("runner: guest hung, killed after %d s\n", timeout_s);
     return RUNNER_HUNG;

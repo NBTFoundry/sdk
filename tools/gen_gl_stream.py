@@ -39,6 +39,10 @@ RUNNER_TRACKED = {"glEnableVertexAttribArray", "glDisableVertexAttribArray"}
 ONE_VALUE = {"glGetBufferParameteriv", "glGetFramebufferAttachmentParameteriv", "glGetProgramiv",
              "glGetRenderbufferParameteriv", "glGetShaderiv", "glGetTexParameterfv", "glGetTexParameteriv",
              "glTexParameterfv", "glTexParameteriv"}
+# Outputs gl.xml sizes for their largest query: four values for this pname,
+# one for every other. Copying four back into a caller's single value would
+# write past it.
+FOUR_IF = {"glGetVertexAttribfv": "GL_CURRENT_VERTEX_ATTRIB", "glGetVertexAttribiv": "GL_CURRENT_VERTEX_ATTRIB"}
 
 ELEM = {"GLboolean": 1, "GLchar": 1, "GLubyte": 1, "GLbyte": 1, "void": 1, "GLshort": 2, "GLushort": 2}
 FLOATS = {"GLfloat", "GLclampf"}
@@ -59,6 +63,8 @@ def length_expr(cmd, p):
     elem = ELEM.get(p.base, 4)
     if p.len.startswith("COMPSIZE"):
         return "%d" % elem if cmd.name in ONE_VALUE else None
+    if cmd.name in FOUR_IF and p.pointer and not p.const:
+        return "((uint64_t)((pname) == %s ? 4 : 1) * %d)" % (FOUR_IF[cmd.name], elem)
     expr = re.sub(r"[A-Za-z_]\w*", lambda m: "(uint64_t)(uint32_t)(%s)" % m.group(0), p.len)
     return "((%s) * %d)" % (expr, elem)
 

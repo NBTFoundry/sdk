@@ -70,7 +70,7 @@ Manager integration is deferred until the car experiment succeeds; see "Not done
 - the lifecycle and settings through `nbt-runner`;
 - the guest GL stream and audio ring against direct calls, using the runner's recording fakes (`NBT_RUNNER_FAKE_GL=1`, `NBT_RUNNER_FAKE_AUDIO=1`).
 
-The VM has no GPU or sound card. Its kernel mishandles a thread's first FPU instruction in Thumb state, so modules, guests and the runner's own code are built in ARM state.
+The VM has no GPU or sound card. Its kernel mishandles a thread's first FPU instruction in Thumb state, and on the car Thumb code in a guest died with SIGILL where ARM code runs (picolibc's Thumb `strcmp`). So modules, guests and the runner's own code are built in ARM state, the module runtime replaces picolibc's three Thumb functions (`strlen`, `strcmp`, `memchr`) and `tools/check_module.py` refuses any Thumb code. The VM loads guests from its boot image, not from a disk file, and did not show the car's fault.
 
 ## The car session
 

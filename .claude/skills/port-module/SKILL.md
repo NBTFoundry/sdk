@@ -30,7 +30,7 @@ Background: `sdk/docs/native-apps.md`. Examples: nf-snes9x's `module` and
    Its third argument is the SPDX licence of every linked object, upstream's
    and ours (`LicenseRef-Snes9x AND MPL-2.0`, `GPL-2.0-or-later`). The macro
    writes `<payload>.map` and runs `tools/check_module.py`: shape, ABI note, no
-   FPU code in Thumb state, and the licence gate (GPL or LGPL only in a guest).
+   Thumb code, and the licence gate (GPL or LGPL only in a guest).
    A failure there is a build failure: fix the cause, never the check.
 4. **Bundle** for today's NBT Manager, which does not run payloads itself yet:
    `<name>-bundle: <payload> $(NBT_SDK_RUNNER)` running

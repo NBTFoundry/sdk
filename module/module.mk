@@ -33,8 +33,9 @@ $(MODULE_OBJ)/rt/%.o: module/runtime/%.c $(MODULE_LIBC)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(MODULE_CFLAGS) -MMD -MP -c $< -o $@
 
-# memcpy's loops must stay loops, not become memcpy calls.
-$(MODULE_OBJ)/rt/memcpy.o: MODULE_CFLAGS += -fno-builtin
+# memcpy's and string.c's loops must stay loops, not become calls to the
+# functions they implement.
+$(MODULE_OBJ)/rt/memcpy.o $(MODULE_OBJ)/rt/string.o: MODULE_CFLAGS += -fno-builtin
 
 $(MODULE_RT): $(MODULE_RT_OBJS)
 	@mkdir -p $(dir $@)

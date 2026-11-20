@@ -4,9 +4,9 @@
 #                     NBT Manager
 #   runner-probe-qnx  the same system services without the bridge, video or
 #                     audio, for the feasibility probes in the QNX 6.5 VM
-# Their own code is in ARM state: in the QEMU VM, the 6.5.0 and SP1 kernels
-# mishandle a thread's first FPU instruction in Thumb state (SIGILL on 6.5.0,
-# a hang on SP1). Included from the top Makefile after guest/guest.mk.
+# Their own code is in ARM state: Thumb code in a guest died with SIGILL on
+# the car, and in the QEMU VM the 6.5.0 and SP1 kernels mishandle a thread's
+# first FPU instruction in Thumb state (SIGILL on 6.5.0, a hang on SP1). Included from the top Makefile after guest/guest.mk.
 
 RUNNER_OBJ := $(OBJ_DIR)/qnx/runner
 RUNNER_FLAGS := -Wc,-marm -Irunner -Icommon -I$(GL_STREAM_DIR) -include runner/gles2_qnx.h

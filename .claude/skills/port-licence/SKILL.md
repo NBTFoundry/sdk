@@ -12,7 +12,8 @@ Noncommercial with a Required Notice).
    a compatible licence (then GPL-2.0-or-later, as in
    https://github.com/NBTFoundry/nf-doom). `LICENSE` holds ours.
 2. **GPL or LGPL upstream:** a guest only, never linked with QNX code
-   (`sdk/docs/native-apps.md`; `tools/check_module.py` enforces it at link).
+   (`sdk/docs/native-apps.md`, port-module; `tools/check_module.py` enforces
+   it at link).
    Write nothing else about QNX licensing.
 3. **Non-commercial upstream:** the package as a whole is non-commercial.
    Say so in the README's License section and in the notice header.

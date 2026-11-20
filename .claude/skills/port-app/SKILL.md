@@ -21,12 +21,13 @@ Do the steps in order. Each is a skill: read it when you reach it.
 | 5 | Controls | port-controls | every action reachable with the iDrive controller |
 | 6 | Package description | port-package | `make package` and `nbt-verify` pass |
 | 7 | Tests | port-tests | `make test test-asan check-static-init` pass |
-| 8 | QNX build | port-build, port-qnx-fixes | `make qnx qnx-check` pass |
+| 8 | QNX build; for GPL or LGPL code a guest instead | port-build, port-qnx-fixes; port-module | `make qnx qnx-check` pass, or the guest's check and VM run |
 | 9 | Licence and notices | port-licence | `legal/NOTICE.txt` current |
 | 10 | CI and release setup | port-release | `ci.yml` green, nothing tagged |
 | 11 | Car test | port-car-test | the user reports results |
 | 12 | Upstream changes, pin moves | port-upstream | after the car test only |
 | any | The SDK, manager or phone app lacks something | port-sdk-gap | |
+| any | Too slow in the car | port-perf | the user reports full speed |
 
 Throughout:
 

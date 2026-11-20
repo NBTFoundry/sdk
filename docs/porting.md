@@ -62,6 +62,7 @@ licence.
 | Study upstream, agree on shape, build form and names | `port-survey` |
 | Repository, upstream submodule, skeleton | `port-repo` |
 | Makefile: host, sanitizer and QNX builds | `port-build`, `port-qnx-fixes` |
+| Without the QNX SDP: a module, or a guest for GPL or LGPL code | `port-module` |
 | The application itself | `port-libretro`, `port-native` or `port-companion` |
 | Controls | `port-controls` |
 | Package description and health check | `port-package` |
@@ -69,6 +70,7 @@ licence.
 | Licence and notices | `port-licence` |
 | CI and signed releases | `port-release` |
 | Car test | `port-car-test` |
+| Speed in the car | `port-perf` |
 | Upstream changes and pin moves | `port-upstream` |
 
 ## References

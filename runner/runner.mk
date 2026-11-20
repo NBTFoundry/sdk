@@ -9,7 +9,7 @@
 # a hang on SP1). Included from the top Makefile after guest/guest.mk.
 
 RUNNER_OBJ := $(OBJ_DIR)/qnx/runner
-RUNNER_FLAGS := -Wc,-marm -Irunner -Icommon -I$(GL_STREAM_DIR)
+RUNNER_FLAGS := -Wc,-marm -Irunner -Icommon -I$(GL_STREAM_DIR) -include runner/gles2_qnx.h
 # Shared by both runners: system services, module loading, the guest server
 # and its GL decoder.
 RUNNER_COMMON_OBJS := $(addprefix $(RUNNER_OBJ)/,host_sys.o module_loader.o guest_server.o gl_runner.o \

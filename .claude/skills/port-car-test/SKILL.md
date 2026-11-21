@@ -15,12 +15,18 @@ Workstation values (test key, kit folder, toolchain): the workspace `CLAUDE.md`.
    `make package APP_KEY=<test key> APP_VERSION=0.0.N APP_SEQ=N`, for the next
    two N above anything sent before. Verify both with `nbt-verify`
    (port-package). Put them in `build/car-test/` with `SHA256SUMS.txt`.
-3. **`docs/car-test.md`**, for the user in the car:
-   - what is needed (kit version, phone app paired, SSH for logs);
+3. **`docs/car-test.md`**, for the user in the car, who has only the phone:
+   every step is done in the phone app, never on a computer or by typing SSH
+   commands. What needs SSH goes through the app's **Install NBT Manager on a
+   car** page over the Wi-Fi ENET adapter: its More tools (**Collect
+   everything**: the debug, iDrive and application logs, `audioconn -l`,
+   processes and the manager's files, in one file to share).
+   - what is needed (kit version, phone app paired, the ENET adapter);
    - parts in order, each step with what to look at: A install and health
      check, settings; B start and use (every control, sound, files); C stop,
-     start again, update while running; D failures over SSH; then the logs
-     to collect before switching off (`/dev/shmem` is RAM);
+     start again, update while running; D failures; then the logs to collect
+     before switching off (`/dev/shmem` is RAM): the app's Show log, or
+     Collect everything;
    - how to go back (uninstall);
    - a result table, one row per step.
 4. **Copy** the packages, `SHA256SUMS.txt` and the procedure (as

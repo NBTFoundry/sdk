@@ -11,7 +11,7 @@ description: Keep an nf-* port in step with its upstream project - move the subm
 git -C third_party/<name> fetch --tags origin
 git -C third_party/<name> checkout <new tag>
 make -j"$(nproc)" test test-asan check-static-init     # plus test-upstream, check-protocol
-make QNX_ENV=… QNX_SCREEN_LIBDIR=… qnx qnx-check        # plus vm-test where it exists
+make module | guest | qnx qnx-check                       # the app's head-unit build; plus vm-test where it exists
 make notice                                              # when upstream's licences or credits changed
 ```
 

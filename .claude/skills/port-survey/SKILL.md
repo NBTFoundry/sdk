@@ -14,7 +14,9 @@ Read only. Clone upstream into the scratchpad, not the workspace.
    libraries, data). It sets the build form:
    - GPL or LGPL: a guest (`sdk/docs/native-apps.md`), never linked with QNX
      code; our files then take a GPL-compatible licence.
-   - MPL, permissive or custom non-commercial: a QNX SDP build (`make qnx`).
+   - MPL, permissive or custom non-commercial: a module, or a native QNX
+     program built with the NBT toolchain's QNX target when it must stay one
+     (`make qnx`). No application builds with the QNX SDP.
    - No licence, or no redistribution: stop and tell the user.
    - List every notice the licence requires (Required Notice lines, credits).
 3. **Shape** (`sdk/docs/porting.md`):

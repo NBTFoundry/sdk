@@ -8,7 +8,7 @@
 # the car, and in the QEMU VM the 6.5.0 and SP1 kernels mishandle a thread's
 # first FPU instruction in Thumb state (SIGILL on 6.5.0, a hang on SP1). Included from the top Makefile after guest/guest.mk.
 
-RUNNER_OBJ := $(OBJ_DIR)/qnx/runner
+RUNNER_OBJ := $(OBJ_DIR)/qnx-sdp/runner
 RUNNER_FLAGS := -Wc,-marm -Irunner -Icommon -I$(GL_STREAM_DIR) -include runner/gles2_qnx.h
 # Shared by both runners: system services, module loading, the guest server
 # and its GL decoder.
@@ -20,12 +20,12 @@ RUNNER_PROBE_QNX := $(BUILD_DIR)/runner-probe-qnx
 RUNNER_PROBE_OBJS := $(RUNNER_COMMON_OBJS) $(RUNNER_OBJ)/runner_probe.o
 
 # Static pattern rules: the QNX environment's make (3.81) takes the first
-# matching implicit rule, the top Makefile's $(OBJ_DIR)/qnx/%.o, which lacks
-# RUNNER_FLAGS; a static pattern rule wins in every make.
+# matching implicit rule, the top Makefile's $(OBJ_DIR)/qnx-sdp/%.o, which
+# lacks RUNNER_FLAGS; a static pattern rule wins in every make.
 RUNNER_CXX_OBJS := $(RUNNER_OBJ)/nbt_runner.o
 $(RUNNER_CXX_OBJS): $(RUNNER_OBJ)/%.o: runner/%.cpp $(GL_STREAM_GEN) | qnx-env
 	@mkdir -p $(dir $@)
-	. "$(QNX_ENV)" && $(QCC) $(QNX_CXXFLAGS) $(RUNNER_FLAGS) $(QNX_DEPFLAGS) -c $< -o $@
+	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CXXFLAGS) $(RUNNER_FLAGS) $(QNX_SDP_DEPFLAGS) -c $< -o $@
 
 # The runners' C sources: their own, the shared benchmark, the generated decoders.
 RUNNER_C_OBJS := $(addprefix $(RUNNER_OBJ)/,host_sys.o module_loader.o guest_server.o gl_runner.o \
@@ -33,18 +33,18 @@ RUNNER_C_OBJS := $(addprefix $(RUNNER_OBJ)/,host_sys.o module_loader.o guest_ser
 define runner_c
 $(1): $(RUNNER_OBJ)/%.o: $(2)/%.c $(GL_STREAM_GEN) | qnx-env
 	@mkdir -p $$(dir $$@)
-	. "$$(QNX_ENV)" && $$(QCC) $$(QNX_CFLAGS) $$(RUNNER_FLAGS) $$(QNX_DEPFLAGS) -c $$< -o $$@
+	. "$$(QNX_ENV)" && $$(QCC) $$(QNX_SDP_CFLAGS) $$(RUNNER_FLAGS) $$(QNX_SDP_DEPFLAGS) -c $$< -o $$@
 endef
 $(eval $(call runner_c,$(RUNNER_C_OBJS),runner))
 $(eval $(call runner_c,$(RUNNER_OBJ)/membench.o,common))
 $(eval $(call runner_c,$(RUNNER_OBJ)/gl_decode.o,$(GL_STREAM_DIR)))
 
-$(NBT_RUNNER): $(NBT_RUNNER_OBJS) $(LIB_DIR)/libnbt-sdk-qnx.a | qnx-env
-	. "$(QNX_ENV)" && $(QCC) $(QNX_CPP_VARIANT) -lang-c++ $(NBT_RUNNER_OBJS) $(LIB_DIR)/libnbt-sdk-qnx.a \
-		-L$(QNX_SCREEN_LIBDIR) $(QNX_LDLIBS) -o $@
+$(NBT_RUNNER): $(NBT_RUNNER_OBJS) $(LIB_DIR)/libnbt-sdk-qnx-sdp.a | qnx-env
+	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CPP_VARIANT) -lang-c++ $(NBT_RUNNER_OBJS) $(LIB_DIR)/libnbt-sdk-qnx-sdp.a \
+		-L$(QNX_SCREEN_LIBDIR) $(QNX_SDP_LDLIBS) -o $@
 
 $(RUNNER_PROBE_QNX): $(RUNNER_PROBE_OBJS) | qnx-env
-	. "$(QNX_ENV)" && $(QCC) $(QNX_C_VARIANT) $(RUNNER_PROBE_OBJS) -o $@
+	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_C_VARIANT) $(RUNNER_PROBE_OBJS) -o $@
 
 .PHONY: nbt-runner runner-probe-qnx runner-check
 nbt-runner: $(NBT_RUNNER)

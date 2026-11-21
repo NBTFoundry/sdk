@@ -10,7 +10,8 @@
 #   	$(CXX) $(APP_OBJS) $(NBT_SDK_HOST_LIBS) $(NBT_SDK_HOST_LDLIBS) -o $@
 #
 # The SDK is built by its own Makefile (targets libs-host, libs-asan,
-# libs-qnx) into NBT_SDK_BUILD_DIR. QNX_ENV and QNX_SCREEN_LIBDIR are passed on.
+# libs-qnx) into NBT_SDK_BUILD_DIR, the QNX libraries with the NBT toolchain.
+# QNX_ENV and QNX_SCREEN_LIBDIR (the QNX SDP, only for nbt-runner) are passed on.
 
 # The targets below must not become the including Makefile's default goal.
 nbt_sdk_default_goal := $(.DEFAULT_GOAL)
@@ -39,9 +40,12 @@ NBT_SDK_FRONT_QNX_LIBS = $(call nbt_sdk_front_libs,qnx)
 NBT_SDK_LIBRETRO_INC := -I$(NBT_SDK_ROOT)/third_party/libretro-common/include
 
 NBT_SDK_HOST_LDLIBS := -lX11 -lEGL -lGLESv2 -lm -ldl -lpthread
-# kdMain must be exported for libKD (see qnx/exports.list).
-NBT_SDK_QNX_LDFLAGS := -Wl,--dynamic-list,$(NBT_SDK_ROOT)/qnx/exports.list
-NBT_SDK_QNX_LDLIBS := -lscreen -lEGL -lGLESv2 -lsocket -lm
+# A QNX 6.5 program with the SDK, built without the QNX SDP (module/flags.mk):
+#   app-qnx: $(APP_QNX_OBJS) $(NBT_SDK_QNX_LIBS)
+#   	$(call nbt_qnx_link,$@,$(APP_QNX_OBJS) $(NBT_SDK_QNX_LIBS),$(NBT_SDK_QNX_LDLIBS))
+# compiled with $(NBT_QNX_CXX) $(NBT_QNX_CXXFLAGS) $(NBT_QNX_SDK_INC). kdMain must
+# be exported for libKD (see qnx/exports.list).
+NBT_SDK_QNX_LDLIBS := --dynamic-list=$(NBT_SDK_ROOT)/qnx/exports.list -lscreen -lEGL -lGLESv2 -lsocket -lm
 
 NBT_SDK_MAKE = $(MAKE) --no-print-directory -C $(NBT_SDK_ROOT) BUILD_DIR=$(NBT_SDK_BUILD_DIR) \
 	QNX_ENV="$(QNX_ENV)" QNX_SCREEN_LIBDIR="$(QNX_SCREEN_LIBDIR)" NBT_TOOLCHAIN="$(NBT_TOOLCHAIN)" \

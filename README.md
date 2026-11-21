@@ -107,16 +107,18 @@ make check-static-init               # no static constructors in any object
 make check-readers NBT_MGR_DIR=../manager   # bridge readers match the manager's
 ```
 
-Head unit (QNX 6.5 SDP for ARMv7; `QNX_SCREEN_LIBDIR` holds the head unit's
-`libscreen.so`):
+Head unit (QNX 6.5, ARMv7), with the NBT toolchain only, no QNX SDP
+(docs/native-apps.md):
 
 ```sh
-make QNX_ENV=/path/to/qnx-env.sh QNX_SCREEN_LIBDIR=/path/to/screen/lib qnx qnx-check
+make toolchain                       # once: the NBT toolchain release the SDK pins
+make qnx qnx-check
 ```
 
-`qnx-check` rejects symbols that QNX 6.5's C++ runtime lacks
-(`GLIBCXX_3.4.14` and newer, `__cxa_throw`) and checks that `kdMain` is
-exported.
+`qnx-check` checks that `kdMain` is exported and, with a QNX 6.5.0 SP1
+sysroot at hand (`QNX65_SP1_SYSROOT`), that every import exists on the car.
+Only `nbt-runner` (`make nbt-runner`, shipped with NBT Manager) still needs
+the SDP: `QNX_ENV` and `QNX_SCREEN_LIBDIR`.
 
 Libraries go to `build/lib/libnbt-{sdk,audio-mixer,gles2}-{host,asan,qnx}.a`.
 

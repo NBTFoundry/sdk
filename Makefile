@@ -15,7 +15,9 @@ CXX := g++
 endif
 PYTHON ?= python3
 
-# QNX 6.5 cross toolchain: QNX_ENV is the environment script to source.
+# The QNX SDP is needed only for nbt-runner (runner/runner.mk), which ships
+# with NBT Manager: QNX_ENV is its environment script to source. Everything
+# else for the head unit builds with the NBT toolchain.
 QNX_ENV ?=
 QNX_SCREEN_LIBDIR ?=
 QCC ?= qcc
@@ -36,13 +38,20 @@ ASAN_CFLAGS := -std=gnu99 $(WARN) $(ASAN_FLAGS)
 ASAN_CXXFLAGS := -std=c++11 $(WARN) -fno-exceptions -fno-rtti $(ASAN_FLAGS)
 HOST_LDLIBS := -lX11 -lEGL -lGLESv2 -lm -ldl -lpthread
 
-QNX_C_VARIANT := -Vgcc_ntoarmv7le
-QNX_CPP_VARIANT := -Vgcc_ntoarmv7le_gpp
-QNX_CFLAGS := $(QNX_C_VARIANT) -D_QNX_SOURCE -O2 -Wc,-std=gnu99 -Wc,-Wall -Wc,-Wextra $(INC)
-QNX_CXXFLAGS := $(QNX_CPP_VARIANT) -D_QNX_SOURCE -O2 -Wc,-std=c++11 -Wc,-fno-exceptions \
+# nbt-runner (runner/runner.mk), with the QNX SDP, and the SDK built for it.
+QNX_SDP_C_VARIANT := -Vgcc_ntoarmv7le
+QNX_SDP_CPP_VARIANT := -Vgcc_ntoarmv7le_gpp
+QNX_SDP_CFLAGS := $(QNX_SDP_C_VARIANT) -D_QNX_SOURCE -O2 -Wc,-std=gnu99 -Wc,-Wall -Wc,-Wextra $(INC)
+QNX_SDP_CXXFLAGS := $(QNX_SDP_CPP_VARIANT) -D_QNX_SOURCE -O2 -Wc,-std=c++11 -Wc,-fno-exceptions \
 	-Wc,-fno-rtti -Wc,-Wall -Wc,-Wextra $(INC)
-QNX_DEPFLAGS = -Wp,-MMD,$(@:.o=.d) -Wp,-MP -Wp,-MT,$@
-QNX_LDLIBS := -lscreen -lEGL -lGLESv2 -lsocket -lm
+QNX_SDP_DEPFLAGS = -Wp,-MMD,$(@:.o=.d) -Wp,-MP -Wp,-MT,$@
+QNX_SDP_LDLIBS := -lscreen -lEGL -lGLESv2 -lsocket -lm
+
+# QNX 6.5 programs: the NBT toolchain's QNX target (module/flags.mk).
+QNX_CFLAGS = $(NBT_QNX_CFLAGS) -O2 -std=gnu99 $(WARN) $(INC) $(NBT_QNX_SDK_INC)
+QNX_CXXFLAGS = $(NBT_QNX_CXXFLAGS) -O2 -std=c++11 $(WARN) -fno-exceptions -fno-rtti $(INC) $(NBT_QNX_SDK_INC)
+# kdMain is exported: the car's libKD calls it.
+QNX_LDLIBS := --dynamic-list=qnx/exports.list -lscreen -lEGL -lGLESv2 -lsocket -lm
 
 # The bridge readers are verbatim copies of NBT Manager's (see READERS).
 READER_FILES := \
@@ -113,13 +122,21 @@ $(OBJ_DIR)/asan/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(INC) $(ASAN_CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/qnx/%.o: %.cpp | qnx-env
+$(OBJ_DIR)/qnx/%.o: %.cpp
 	@mkdir -p $(dir $@)
-	. "$(QNX_ENV)" && $(QCC) $(QNX_CXXFLAGS) $(QNX_DEPFLAGS) -c $< -o $@
+	$(NBT_QNX_CXX) $(QNX_CXXFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/qnx/%.o: %.c | qnx-env
+$(OBJ_DIR)/qnx/%.o: %.c
 	@mkdir -p $(dir $@)
-	. "$(QNX_ENV)" && $(QCC) $(QNX_CFLAGS) $(QNX_DEPFLAGS) -c $< -o $@
+	$(NBT_QNX_CC) $(QNX_CFLAGS) -MMD -MP -c $< -o $@
+
+$(OBJ_DIR)/qnx-sdp/%.o: %.cpp | qnx-env
+	@mkdir -p $(dir $@)
+	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CXXFLAGS) $(QNX_SDP_DEPFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/qnx-sdp/%.o: %.c | qnx-env
+	@mkdir -p $(dir $@)
+	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CFLAGS) $(QNX_SDP_DEPFLAGS) -c $< -o $@
 
 # --- Libraries ---
 define host_lib
@@ -140,16 +157,22 @@ $(eval $(call host_lib,nbt-frontend,asan,$(FRONTEND_SRC)))
 $(eval $(call host_lib,nbt-retro,asan,$(RETRO_SRC)))
 
 define qnx_lib
-$(LIB_DIR)/lib$(1)-qnx.a: $(call objs,qnx,$(2)) | qnx-env
+$(LIB_DIR)/lib$(1)-qnx.a: $(call objs,qnx,$(2))
 	@mkdir -p $$(dir $$@)
 	rm -f $$@
-	. "$(QNX_ENV)" && $(QNX_AR) rcs $$@ $$(filter %.o,$$^)
+	$$(NBT_MOD_AR) rcs $$@ $$(filter %.o,$$^)
 endef
 $(eval $(call qnx_lib,nbt-sdk,$(SDK_SRC)))
 $(eval $(call qnx_lib,nbt-audio-mixer,$(MIXER_SRC)))
 $(eval $(call qnx_lib,nbt-gles2,$(GLES2_SRC)))
 $(eval $(call qnx_lib,nbt-frontend,$(FRONTEND_SRC)))
 $(eval $(call qnx_lib,nbt-retro,$(RETRO_SRC)))
+
+# The SDK for nbt-runner, with the QNX SDP.
+$(LIB_DIR)/libnbt-sdk-qnx-sdp.a: $(call objs,qnx-sdp,$(SDK_SRC)) | qnx-env
+	@mkdir -p $(dir $@)
+	rm -f $@
+	. "$(QNX_ENV)" && $(QNX_AR) rcs $@ $(filter %.o,$^)
 
 # --- Host tests ---
 $(FAKE_A2I): tests/fake_a2i_client.cpp include/nbt/app/audio_a2i.hpp
@@ -227,15 +250,13 @@ check-readers:
 	done; \
 	test $$status -eq 0 && echo "OK: readers match $(NBT_MGR_DIR)"
 
-# --- QNX 6.5 ARMv7 ---
+# --- QNX 6.5 ARMv7: ordinary programs, with the NBT toolchain (no SDP) ---
 qnx-env:
 	@test -n "$(QNX_ENV)" || { echo "QNX_ENV is not set: make QNX_ENV=/path/to/qnx-env.sh ..."; exit 1; }
 	@test -r "$(QNX_ENV)" || { echo "QNX_ENV=$(QNX_ENV) is not readable"; exit 1; }
 
-$(SMOKE_QNX): $(OBJ_DIR)/qnx/tests/smoke_app.o $(QNX_LIBS) qnx/exports.list | qnx-env
-	@test -n "$(QNX_SCREEN_LIBDIR)" || { echo "QNX_SCREEN_LIBDIR is not set (directory with libscreen.so)"; exit 1; }
-	. "$(QNX_ENV)" && $(QCC) $(QNX_CPP_VARIANT) -lang-c++ $(filter %.o %.a,$^) \
-		-L$(QNX_SCREEN_LIBDIR) -Wl,--dynamic-list,qnx/exports.list $(QNX_LDLIBS) -o $@
+$(SMOKE_QNX): $(OBJ_DIR)/qnx/tests/smoke_app.o $(QNX_LIBS) qnx/exports.list
+	$(call nbt_qnx_link,$@,$(filter %.o %.a,$^),$(QNX_LDLIBS))
 
 qnx: libs-qnx $(SMOKE_QNX)
 
@@ -249,12 +270,9 @@ define qnx_import_check
 endef
 
 qnx-check: qnx
-	. "$(QNX_ENV)" && $(QNX_READELF) -h -d $(SMOKE_QNX)
-	. "$(QNX_ENV)" && set -e; \
-		bad="$$($(QNX_NM) -u $(SMOKE_QNX) | grep -E 'GLIBCXX_3\.4\.(1[4-9]|[2-9][0-9])|__cxa_throw' || true)"; \
-		if test -n "$$bad"; then echo "Disallowed QNX ABI symbols:"; echo "$$bad"; exit 1; fi; \
-		$(QNX_NM) -D $(SMOKE_QNX) | grep -qw kdMain || { echo "kdMain is not exported"; exit 1; }; \
-		echo "OK: QNX ELF/ABI symbols verified, kdMain exported"
+	$(NBT_MOD_READELF) -h -d $(SMOKE_QNX)
+	@$(NBT_LLVM_BIN)/llvm-nm -D --defined-only $(SMOKE_QNX) | grep -qw kdMain || { echo "kdMain is not exported"; exit 1; }
+	@echo "OK: kdMain exported"
 	$(call qnx_import_check,$(SMOKE_QNX))
 
 # --- Housekeeping ---

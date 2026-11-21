@@ -69,7 +69,8 @@ is read-only); `mmap` only anonymous, never fixed (a hint is ignored). A JIT
 (dynarec) works: `mmap`/`mprotect` with `PROT_EXEC`, also on static memory, and
 `__clear_cache` (`module/runtime/mman.c`). A guest has one GL thread; `glGetUniform*v` is not streamed; an
 indexed draw from a bound element buffer takes all its vertex data from
-buffers. Code that needs any of these: port-sdk-gap, or a QNX SDP build.
+buffers. Code that needs any of these: port-sdk-gap, or a native QNX program
+built with the NBT toolchain's QNX target (port-build), never the QNX SDP.
 
 Defaults until the car session settles them: aligned accesses
 (`NBT_MOD_UNALIGNED=0`; the VM faults on unaligned ones), no NEON, ARM state.

@@ -42,20 +42,23 @@ Rules:
   `-std=c++11 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti`.
 - Objects per kind in `$(OBJ_DIR)/{host,asan,qnx}/`, built with `-MMD -MP`;
   `-include` the `.d` files at the end.
-- QNX compile: `. "$(QNX_ENV)" && $(QCC) -Vgcc_ntoarmv7le_gpp -D_QNX_SOURCE -O2
-  -Wc,-std=c++11 -Wc,-fno-exceptions -Wc,-fno-rtti -Wp,-U__EXCEPTIONS ...`
-  (`-Vgcc_ntoarmv7le` for C). An order-only `qnx-env` target stops early
-  when `QNX_ENV` is unset.
-- QNX link: `$(QCC) -Vgcc_ntoarmv7le_gpp -lang-c++ <objects> <SDK QNX libs>
-  -L$(QNX_SCREEN_LIBDIR) $(NBT_SDK_QNX_LDFLAGS) $(NBT_SDK_QNX_LDLIBS)`, then
-  `$(QNX_STRIP)` into the shipped binary; keep `-unstripped` for the checks.
+- Applications are built without the QNX SDP. Prefer a module or a guest
+  (port-module). A program that must stay a native QNX executable uses the
+  NBT toolchain's QNX target (`sdk/docs/native-apps.md`, "Ordinary QNX
+  programs without the SDP"):
+  - compile: `$(NBT_QNX_CXX) $(NBT_QNX_CXXFLAGS) $(NBT_QNX_SDK_INC) -O2
+    -std=c++11 ...` (`$(NBT_QNX_CC) $(NBT_QNX_CFLAGS)` for C);
+  - link: `$(call nbt_qnx_link,$@,<objects> <SDK QNX libs>,$(NBT_SDK_QNX_LDLIBS))`,
+    then `$(NBT_LLVM_BIN)/llvm-strip` into the shipped binary; keep
+    `-unstripped` for the checks;
+  - the car's libraries come as link stubs (`-lsocket`, `-lscreen`, `-lusbdi`,
+    `-lasound`, `-lssl`, ...); a library outside the toolchain's list needs its
+    stub added there (the toolchain's `qnx/stubs`).
 - `qnx-check` on the unstripped binary:
-  - no `GLIBCXX_3.4.14` or newer, no `CXXABI_1.3.4` or newer, no `__cxa_throw` in `$(QNX_NM) -u`;
-  - `$(NBT_SDK_ROOT)/tools/check_qnx_imports.py --sysroot $(QNX65_SP1_SYSROOT) --readelf $(NBT_MOD_READELF) <binary>`,
-    with `QNX65_SP1_SYSROOT ?= $(HOME)/src/tools/qnx-6.5sp1-tools/sdk/target/qnx6`;
-  - `kdMain` exported (`$(QNX_NM) -D ... | grep -qw kdMain`) when it opens a window.
-- Build with the SP1 toolchain (`QNX_ENV` in the workspace `CLAUDE.md`), as
-  releases do. Build errors: port-qnx-fixes.
+  `$(NBT_SDK_ROOT)/tools/check_qnx_imports.py --sysroot $(QNX65_SP1_SYSROOT) --readelf $(NBT_MOD_READELF) <binary>`,
+  with `QNX65_SP1_SYSROOT ?= $(HOME)/src/tools/qnx-6.5sp1-tools/sdk/target/qnx6`
+  (skipped without it); `kdMain` exported (`llvm-nm -D --defined-only`) when it
+  opens a window. Build errors: port-qnx-fixes.
 
-Check: `make -j"$(nproc)" host`, then
-`make QNX_ENV=… QNX_SCREEN_LIBDIR=… qnx qnx-check`.
+Check: `make -j"$(nproc)" host`, then `make qnx qnx-check` (after
+`make -C ../sdk toolchain` once).

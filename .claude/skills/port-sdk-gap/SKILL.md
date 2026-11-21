@@ -22,7 +22,7 @@ where it grants anything.
    buffers; a stub returning `ENOSYS` for modules where it cannot work there;
    a section in `docs/api.md`; tests in `tests/`. Run
    `make -j"$(nproc)" test test-asan check-static-init check-generic` and
-   `make QNX_ENV=… QNX_SCREEN_LIBDIR=… qnx qnx-check`. The bridge readers are
+   `make qnx qnx-check` (the NBT toolchain's QNX target). The bridge readers are
    the manager's copies: `make check-readers NBT_MGR_DIR=../manager`.
 5. **Manager:** follow its `AGENTS.md`; `nice make -j"$(nproc)" pre-commit test`;
    document in `PROTOCOL.md` or `docs/`.

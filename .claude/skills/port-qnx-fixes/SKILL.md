@@ -8,8 +8,15 @@ description: Known QNX 6.5 build and run problems when porting code to the NBT h
 Fixes for upstream code go in `src/compat/` (headers forced with `-include`,
 or extra objects), never in the submodule.
 
+Applications build with the NBT toolchain (modules, guests, or its QNX target
+for native programs); the rows on `qcc`, `QNX_ENV` and libstdc++ concern the
+SDP builds that remain (`nbt-runner`, the manager) and older apps.
+
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| a QNX-target link fails on a symbol the car's `libc.so.3` lacks (`popen`, `glob`, `regcomp`, `slogf`, `random`...) | QNX links those statically from `libc.a`, which is QNX code | the toolchain's `libnbtqnx.a` provides some (`popen`, `pclose`); add another there (`qnx/libc/`), or avoid it |
+| a QNX-target program dies at start in the loader | its first PT_LOAD is not the text segment, or no QNX stack note | link with `$(NBT_QNX_LDFLAGS)` (`--no-rosegment`; `crt1.o` carries the note) |
+| C++ exceptions are not caught in a QNX-target program | a car library's stub exported GCC's unwinder | the toolchain's stub lists leave `_Unwind_*`/`__gxx_personality*` out: rebuild the stubs, never add those names |
 | `qcc` does nothing, or make error 127 | the QNX environment was not sourced | each QNX command runs as `. "$(QNX_ENV)" && ...`; a 6.6 env script that returns 1 needs a wrapper ending in `true` |
 | `_Sinx` (or another libm symbol) missing on the car | built with the QNX 6.6 toolchain | build with the 6.5 SP1 toolchain |
 | `__cxa_throw` or `GLIBCXX_3.4.14`+ in `qnx-check` | something throws, or a newer libstdc++ symbol | `-fno-exceptions` everywhere, plus `-Wp,-U__EXCEPTIONS`: qcc defines `__EXCEPTIONS` anyway, which turns libstdc++'s `__try`/`__catch` into real ones |

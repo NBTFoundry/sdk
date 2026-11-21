@@ -13,7 +13,7 @@
 # The NBT toolchain (github.com/NBTFoundry/toolchains): clang, lld and the
 # runtime every module and guest links statically (picolibc, compiler-rt,
 # libc++), with the C library headers the module runtime implements.
-NBT_TOOLCHAIN_VERSION := 1.1.0
+NBT_TOOLCHAIN_VERSION := 1.2.0
 NBT_TOOLCHAIN ?= $(NBT_MOD_ROOT)/toolchain/nbt-toolchain-$(NBT_TOOLCHAIN_VERSION)
 NBT_LLVM_BIN := $(NBT_TOOLCHAIN)/bin
 NBT_MOD_CC := $(NBT_LLVM_BIN)/clang
@@ -78,6 +78,25 @@ nbt_mod_goal := $(.DEFAULT_GOAL)
 $(filter $(NBT_MOD_RUNTIME)/%,$(NBT_MOD_RT_LIBS)):
 	$(error No NBT toolchain $(NBT_TOOLCHAIN_VERSION) in $(NBT_TOOLCHAIN): run "make toolchain" in the SDK or set NBT_TOOLCHAIN (docs/native-apps.md))
 .DEFAULT_GOAL := $(nbt_mod_goal)
+
+# --- Ordinary QNX 6.5 programs without the QNX SDP: the toolchain's QNX
+# target (its target.mk gives NBT_QNX_CFLAGS, NBT_QNX_CXXFLAGS,
+# NBT_QNX_LDFLAGS and NBT_QNX_LDLIBS). Compile with
+#   $(NBT_QNX_CC) $(NBT_QNX_CFLAGS) / $(NBT_QNX_CXX) $(NBT_QNX_CXXFLAGS)
+# (plus $(NBT_QNX_SDK_INC) for the SDK and Khronos headers) and link with
+#   $(call nbt_qnx_link,output,objects,libraries such as -lsocket)
+# The program links the car's own shared libraries when it starts.
+NBT_QNX := $(NBT_TOOLCHAIN)/armv7a-nbt/qnx
+-include $(NBT_QNX)/target.mk
+NBT_QNX_CC := $(NBT_LLVM_BIN)/clang
+NBT_QNX_CXX := $(NBT_LLVM_BIN)/clang++
+NBT_QNX_SDK_INC := -I$(NBT_MOD_ROOT)/include -I$(NBT_MOD_ROOT)/third_party/OpenGL-Registry/api \
+	-I$(NBT_MOD_ROOT)/third_party/EGL-Registry/api -DEGL_NO_PLATFORM_SPECIFIC_TYPES
+# $(call nbt_qnx_link,output,objects,libraries)
+define nbt_qnx_link
+	@test -n "$(NBT_QNX_LDFLAGS)" || { echo "No QNX target in the NBT toolchain at $(NBT_TOOLCHAIN): run \"make toolchain\" in the SDK or set NBT_TOOLCHAIN"; exit 1; }
+	$(NBT_MOD_LD) $(NBT_QNX_LDFLAGS) -Map $(1).map -o $(1) $(2) $(3) $(NBT_QNX_LDLIBS)
+endef
 
 # Payload checks: shape, ABI note, no Thumb code and, from the link
 # map, licences (GPL/LGPL objects only in a guest).

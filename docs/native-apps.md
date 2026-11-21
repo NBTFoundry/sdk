@@ -68,6 +68,39 @@ JIT compilers work as on Linux (`module/runtime/mman.c`, toolchain 1.1.0 or newe
 
 Portable code's probes get plain answers (toolchain 1.1.0 or newer): thread scheduling attributes are accepted and unused, as POSIX has it under `PTHREAD_INHERIT_SCHED` (`PTHREAD_EXPLICIT_SCHED` fails with `ENOTSUP`); `getauxval(AT_HWCAP)` and `AT_HWCAP2` report no optional CPU feature (`<asm/hwcap.h>` has the bits), so code takes its baseline paths: no NEON.
 
+## Ordinary QNX programs without the SDP
+
+Some applications must stay native QNX programs: a daemon that loads the car's
+own libraries, serves a resource manager or talks to iDrive's servers by
+message passing cannot be a module or a guest. The NBT toolchain (1.2.0 or
+newer) builds those too, without the QNX SDP: its QNX 6.5 target
+(`armv7a-nbt/qnx`) has headers for the car's C library and QNX's interfaces,
+`crt1.o`, link stubs of the car's shared libraries and libc++ with exceptions.
+The program is an ordinary QNX executable that links the car's `libc.so.3`,
+`libsocket`, `libscreen` and others when it starts, as a program built with
+the SDP does; nothing of QNX is in it.
+
+`module/flags.mk` (through `nbt-sdk.mk`) gives the compilers, flags and a
+link macro; the SDK's own QNX libraries (`libs-qnx`) are built this way:
+
+```make
+include $(NBT_SDK_DIR)/nbt-sdk.mk
+
+$(OBJ)/qnx/%.o: %.cpp
+	$(NBT_QNX_CXX) $(NBT_QNX_CXXFLAGS) $(NBT_QNX_SDK_INC) -O2 -std=c++11 -c $< -o $@
+
+app-qnx: $(QNX_OBJS) $(NBT_SDK_QNX_LIBS)
+	$(call nbt_qnx_link,$@,$(QNX_OBJS) $(NBT_SDK_QNX_LIBS),$(NBT_SDK_QNX_LDLIBS))
+```
+
+Such an application declares no `runner` capability; its signed release
+builds with `qnx: false` like a module's. `make qnx-check` checks that its
+imports exist on the car (QNX 6.5.0 SP1). Worked example: nf-android-auto
+(its adapter and NBT-AAD's daemon).
+
+Only `nbt-runner` itself is still built with the SDP (`QNX_ENV`): it ships
+with NBT Manager.
+
 ## The runner
 
 `make nbt-runner` builds it with the QNX SDP (`QNX_ENV`, `QNX_SCREEN_LIBDIR`). NBT Manager builds it from the SDK commit its `sdk.ref` names and ships it in its signed release (the `NBTRLS3` component `runner`, staged beside the manager's worker). It is an ordinary NBT application: it takes the manager's bridge descriptors, then runs the payload named by `--nbt-payload PATH`, which the manager passes for an installed payload with the note. With no `--nbt-payload`, it runs a payload appended to its own executable (a bundle), copied to the data folder (or `/dev/shmem`). Before running anything, it checks the payload's `.note.nbt` (ABI major and minor, module or guest): another major or a newer minor stops it with `needs runtime X.Y; this runner has A.B`, so an install's health check fails cleanly.

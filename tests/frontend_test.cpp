@@ -294,6 +294,40 @@ void test_file_list() {
   CHECK(!list->load("/nonexistent/folder", kExtensions) && list->count() == 0);
   CHECK(app::file_name_valid("x.sfc") && !app::file_name_valid("x") &&
         !app::file_name_valid("a/b.c"));
+  /* Game folders (`|folders`): one entry each, opened at their main file. */
+  char game[160], other[160], loose[160];
+  snprintf(game, sizeof(game), "%s/Tekken 3", dir);
+  snprintf(other, sizeof(other), "%s/No main", dir);
+  CHECK(!mkdir(game, 0700) && !mkdir(other, 0700));
+  write_file(game, "Tekken 3 (Track 2).bin", "22");
+  write_file(game, "Tekken 3 (Track 1).bin", "1");
+  write_file(game, "Tekken 3.cue", "cue");
+  write_file(other, "readme.txt", "x");
+  snprintf(loose, sizeof(loose), "%s/Loose.bin", dir);
+  write_file(dir, "Loose.bin", "4444");
+  static const char* const kDiscs[] = {"cue", "bin", NULL};
+  static const char* const kMains[] = {"m3u", "cue", "bin", NULL};
+  CHECK(list->load(dir, kDiscs) && list->count() == 1); /* no folders without mains */
+  CHECK(list->load(dir, kDiscs, kMains) && list->count() == 2);
+  CHECK(!strcmp(list->at(0).name, "Loose.bin") && !list->at(0).file[0]);
+  CHECK(!strcmp(list->at(1).name, "Tekken 3") && !strcmp(list->at(1).file, "Tekken 3.cue") &&
+        list->at(1).size == 6);
+  char opened[256];
+  CHECK(list->path(1, opened, sizeof(opened)) && strstr(opened, "/Tekken 3/Tekken 3.cue"));
+  data = static_cast<char*>(list->read(1, 16, &size));
+  CHECK(data && size == 3 && !memcmp(data, "cue", 3));
+  free(data);
+  static const char* const kBinsOnly[] = {"m3u", "bin", NULL};
+  CHECK(list->load(dir, kDiscs, kBinsOnly) && !strcmp(list->at(1).file, "Tekken 3 (Track 1).bin"));
+  const char* inner[] = {"Tekken 3/Tekken 3 (Track 2).bin", "Tekken 3/Tekken 3 (Track 1).bin",
+                         "Tekken 3/Tekken 3.cue", "No main/readme.txt", "Loose.bin"};
+  for (size_t i = 0; i < 5; ++i) {
+    char path[200];
+    snprintf(path, sizeof(path), "%s/%s", dir, inner[i]);
+    unlink(path);
+  }
+  rmdir(game);
+  rmdir(other);
   unlink(link);
   rmdir(sub);
   const char* names[] = {"b game.sfc", "A game.SFC", "c.smc", "notes.txt", ".hidden.sfc"};

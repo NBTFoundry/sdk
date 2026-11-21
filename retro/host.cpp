@@ -159,7 +159,7 @@ void open_games(Host& h) {
   h.menu_input.reset();
   h.audio.clear();
   h.files.load(h.lifecycle.files_dir(),
-               h.config.extensions ? h.config.extensions : h.extension_list);
+               h.config.extensions ? h.config.extensions : h.extension_list, h.config.folder_mains);
   h.menu_kind = kMenuGames;
   snprintf(title, sizeof(title), "%s: choose a game", h.config.system ? h.config.system : "Games");
   h.menu.open(title);

@@ -188,6 +188,16 @@ manager stores, the given extensions in any case, sorted without regard to
 case, at most 512. `read(i, max, &size)` reads one into memory without
 following a link. Saves and the like belong in `data_dir()`.
 
+When one game is several files (a CD image's cue and bins), the package
+declares `--bridge-files <exts>|<MiB>|<MiB>|folders=<exts>`, the extensions
+of the file that makes a folder one game (`m3u,cue`): NBT Manager then imports
+a folder, or a zip archive, from a USB stick holding one whole, as a game
+folder (one level). `load(dir, extensions, folder_mains)` lists each game folder as one
+entry: its name, the size of its files, and in `file` the file to open, the
+one whose extension comes first in `folder_mains` (`{"m3u", "cue", ...}`);
+`path(i)` gives that file's path. The retro front end takes the list as
+`HostConfig::folder_mains`. Without `folder_mains`, folders are left out.
+
 ## Full-screen applications — bridge 1.6
 
 For an application that places its own surface on the panel (Android Auto),

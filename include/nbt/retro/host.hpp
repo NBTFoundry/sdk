@@ -32,6 +32,10 @@ struct HostConfig {
   /* The core's system folder (BIOS files): the files folder when true, so
    * users add them as they add games; the data folder otherwise. */
   bool system_in_files;
+  /* For games that are folders (`|folders=` in the package: a CD image's cue
+   * and bins): the extensions of the file to open in a game folder, the
+   * preferred first (NULL ended); NULL: no game folders. */
+  const char* const* folder_mains;
 };
 
 /* The application: the bridge's lifecycle (a health check only reports

@@ -138,8 +138,9 @@ bool load_game(Host& h, size_t index) {
   if (data_path(h, ".", "last-game", save, sizeof(save))) {
     frontend::save_file_write(save, h.game, strlen(h.game));
   }
-  app::log_info("game %s: %ux%u, %.3f fps, %.0f Hz", h.game, h.av.geometry.base_width,
-                h.av.geometry.base_height, h.av.timing.fps, h.av.timing.sample_rate);
+  app::log_info("game %s: %ux%u, %.3f fps, %.0f Hz, aspect %.3f, %u quarter turns", h.game,
+                h.av.geometry.base_width, h.av.geometry.base_height, h.av.timing.fps,
+                h.av.timing.sample_rate, h.frame_options.display_aspect, h.frame_options.rotation);
   app::log_stage("run");
   return true;
 }

@@ -30,6 +30,14 @@ void RETRO_CALLCONV core_log(enum retro_log_level level, const char* fmt, ...) {
   }
 }
 
+/* A folder for the core ("." for none), in a buffer of the host's: cores
+ * copy a fixed MAX_PATH from it (FinalBurn Neo), past the end of a string in
+ * the environment, at the top of the stack. */
+const char* core_folder(char (&out)[kFolderSize], const char* dir) {
+  snprintf(out, sizeof(out), "%s", dir && dir[0] ? dir : ".");
+  return out;
+}
+
 bool set_format(Host& h, enum retro_pixel_format format) {
   switch (format) {
     case RETRO_PIXEL_FORMAT_RGB565:
@@ -71,11 +79,10 @@ bool RETRO_CALLCONV environment(unsigned cmd, void* data) {
     case RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY:
       return true;
     case RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY:
-      if (h->config.system_in_files && h->lifecycle.files_dir()[0]) {
-        *static_cast<const char**>(data) = h->lifecycle.files_dir();
-        return true;
-      }
-      *static_cast<const char**>(data) = h->lifecycle.data_dir()[0] ? h->lifecycle.data_dir() : ".";
+      *static_cast<const char**>(data) =
+          core_folder(h->system_dir, h->config.system_in_files && h->lifecycle.files_dir()[0]
+                                         ? h->lifecycle.files_dir()
+                                         : h->lifecycle.data_dir());
       return true;
     case RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION:
       *static_cast<unsigned*>(data) = 1;
@@ -99,7 +106,7 @@ bool RETRO_CALLCONV environment(unsigned cmd, void* data) {
     }
     case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
     case RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY:
-      *static_cast<const char**>(data) = h->lifecycle.data_dir()[0] ? h->lifecycle.data_dir() : ".";
+      *static_cast<const char**>(data) = core_folder(h->save_dir, h->lifecycle.data_dir());
       return true;
     case RETRO_ENVIRONMENT_SET_PIXEL_FORMAT:
       return set_format(*h, *static_cast<const enum retro_pixel_format*>(data));

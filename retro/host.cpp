@@ -464,6 +464,8 @@ Host::Host(const HostConfig& c)
   memset(&info, 0, sizeof(info));
   memset(&av, 0, sizeof(av));
   memset(&disk, 0, sizeof(disk));
+  memset(system_dir, 0, sizeof(system_dir));
+  memset(save_dir, 0, sizeof(save_dir));
   extensions[0] = game[0] = title[0] = notice[0] = '\0';
   list_count = 0;
   extension_list[0] = NULL;

@@ -29,6 +29,8 @@ namespace retro {
 
 enum MenuKind { kMenuClosed, kMenuPause, kMenuGames };
 enum { kLabelSize = frontend::Menu::kTextMax + 1 };
+/* The folders given to the core: as large as a path may be. */
+enum { kFolderSize = 4096 };
 
 struct Host {
   explicit Host(const HostConfig& c);
@@ -58,6 +60,9 @@ struct Host {
   /* Its disc control (SET_DISK_CONTROL_(EXT_)INTERFACE); members it does
    * not give are NULL. */
   struct retro_disk_control_ext_callback disk;
+  /* Its system and save folders (GET_*_DIRECTORY), zero-filled after the path. */
+  char system_dir[kFolderSize];
+  char save_dir[kFolderSize];
 
   /* The game list: the files' indexes in the order shown (by label with
    * HostConfig::describe, which may leave some out). */

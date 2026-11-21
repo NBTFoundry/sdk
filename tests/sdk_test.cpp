@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
+#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -13,6 +14,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include "nbt/app/audio_a2i.hpp"
 #include "nbt/app/audio_mixer.hpp"
 #include "nbt/app/audio_route.hpp"
 #include "nbt/app/back_gesture.hpp"
@@ -612,6 +614,78 @@ void test_audio_mixer() {
   g_tests_run++;
 }
 
+/* Renders a ramp: frame i holds (i, -i) as 16-bit values. */
+void ramp_render(void* context, int16_t* out_lr, int frames) {
+  int* next = static_cast<int*>(context);
+  for (int i = 0; i < frames; ++i, ++*next) {
+    out_lr[2 * i] = static_cast<int16_t>(*next);
+    out_lr[2 * i + 1] = static_cast<int16_t>(-*next);
+  }
+}
+
+void test_audio_a2i() {
+  A2iParams p;
+  a2i_fill_params(&p, "input_stereo_0", 44100, 2048, 8);
+  CHECK(p.magic == 0x02000000u && p.direction == 0 && p.one == 1 && p.buffers == 8);
+  CHECK(p.buffer_bytes == 2048 && p.channels == 2 && p.sample_bytes == 2 && p.rate == 44100);
+  CHECK(p.stereo == 1 && p.format == 0 && p.cookie == 0x05555555u && p.timeout_ms == 185);
+  CHECK(!strcmp(p.endpoint, "input_stereo_0") && p.zero_20 == 0 && p.zero_2c == 0);
+  CHECK(a2i_endpoint_valid("input_stereo_0") && a2i_endpoint_valid("input_stereo_AirPlayMain"));
+  CHECK(!a2i_endpoint_valid("") && !a2i_endpoint_valid(NULL) && !a2i_endpoint_valid("/input"));
+  CHECK(!a2i_endpoint_valid("../x") && !a2i_endpoint_valid("a_name_that_is_far_too_long_0123"));
+
+  /* NBT_AUDIO_A2I: AudioPcm plays through the library at 44100 Hz. */
+  const char* fake = getenv("NBT_TEST_FAKE_A2I");
+  CHECK(fake && fake[0]);
+  void* lib = dlopen(fake, RTLD_NOW | RTLD_LOCAL); /* keeps its state past AudioPcm's dlclose */
+  CHECK(lib != NULL);
+  typedef void (*CountsFn)(int*);
+  typedef void (*ParamsFn)(A2iParams*);
+  typedef unsigned (*CapturedFn)(const unsigned char**);
+  CountsFn counts = reinterpret_cast<CountsFn>(dlsym(lib, "fake_a2i_counts"));
+  ParamsFn params = reinterpret_cast<ParamsFn>(dlsym(lib, "fake_a2i_params"));
+  CapturedFn captured = reinterpret_cast<CapturedFn>(dlsym(lib, "fake_a2i_captured"));
+  CHECK(counts && params && captured);
+  setenv("NBT_A2I_LIB", fake, 1);
+  setenv("NBT_AUDIO_A2I", "input_stereo_0", 1);
+  setenv("NBT_AUDIO_CONN", "0", 1);
+  int next = 1;
+  {
+    AudioPcm pcm;
+    CHECK(pcm.open(22050, ramp_render, &next, false));
+    CHECK(pcm.active() && pcm.sample_rate() == 44100 && pcm.frag_frames() == 512);
+    const unsigned char* data = NULL;
+    for (int i = 0; i < 2000 && captured(&data) < 8 * 2048 + 4 * 2048; ++i) usleep(1000);
+    pcm.close();
+    CHECK(!pcm.active());
+  }
+  int c[5];
+  counts(c);
+  CHECK(c[0] == 1 && c[1] == 1 && c[2] == 1 && c[3] == 1 && c[4] == 8);
+  params(&p);
+  CHECK(!strcmp(p.endpoint, "input_stereo_0") && p.rate == 44100 && p.buffer_bytes == 2048);
+  const unsigned char* data = NULL;
+  const unsigned bytes = captured(&data);
+  CHECK(bytes >= 12 * 2048);
+  for (unsigned i = 0; i < 8 * 2048; ++i) CHECK(data[i] == 0); /* primed silence */
+  const int16_t* lr = reinterpret_cast<const int16_t*>(data + 8 * 2048);
+  for (int i = 0; i < 4 * 512; ++i) {
+    CHECK(lr[2 * i] == static_cast<int16_t>(i + 1) &&
+          lr[2 * i + 1] == static_cast<int16_t>(-(i + 1)));
+  }
+  /* A name that is no io-amp input: no device. */
+  setenv("NBT_AUDIO_A2I", "../input", 1);
+  {
+    AudioPcm pcm;
+    CHECK(!pcm.open(22050, ramp_render, &next, false) && !pcm.active());
+  }
+  unsetenv("NBT_AUDIO_A2I");
+  unsetenv("NBT_A2I_LIB");
+  unsetenv("NBT_AUDIO_CONN");
+  dlclose(lib);
+  g_tests_run++;
+}
+
 void test_log() {
   char dir[64];
   make_temp_dir(dir, sizeof(dir), "log");
@@ -955,6 +1029,7 @@ int main() {
   test_lifecycle();
   test_bridge_16();
   test_audio_mixer();
+  test_audio_a2i();
   test_log();
   test_audio_route();
   test_child();

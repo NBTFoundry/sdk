@@ -83,13 +83,15 @@ FRONTEND_TEST := $(BUILD_DIR)/sdk-frontend-test
 FRONTEND_ASAN := $(BUILD_DIR)/sdk-frontend-asan
 RETRO_APP := $(BUILD_DIR)/nbt-retro-fake
 GL_LOOPBACK := $(BUILD_DIR)/sdk-gl-loopback
+# The head unit's liba2i_client, faked for AudioPcm's A2I output (tests/sdk_test.cpp).
+FAKE_A2I := $(BUILD_DIR)/fake/liba2i_client.so
 
 .PHONY: all host libs-host libs-asan libs-qnx test test-asan check-static-init check-generic \
 	check-readers qnx qnx-check qnx-env format clean
 
 all: host
 
-host: libs-host $(UNIT_TEST) $(SMOKE) $(FRONTEND_TEST) $(RETRO_APP) $(GL_LOOPBACK)
+host: libs-host $(UNIT_TEST) $(SMOKE) $(FRONTEND_TEST) $(RETRO_APP) $(GL_LOOPBACK) $(FAKE_A2I)
 libs-host: $(HOST_LIBS) $(call front_libs,host)
 libs-asan: $(ASAN_LIBS) $(call front_libs,asan)
 libs-qnx: $(QNX_LIBS) $(call front_libs,qnx)
@@ -150,6 +152,10 @@ $(eval $(call qnx_lib,nbt-frontend,$(FRONTEND_SRC)))
 $(eval $(call qnx_lib,nbt-retro,$(RETRO_SRC)))
 
 # --- Host tests ---
+$(FAKE_A2I): tests/fake_a2i_client.cpp include/nbt/app/audio_a2i.hpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(INC) $(HOST_CXXFLAGS) -fPIC -shared -fvisibility=hidden $< -o $@
+
 $(UNIT_TEST): $(OBJ_DIR)/host/tests/sdk_test.o $(HOST_LIBS)
 	$(CXX) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
 
@@ -174,14 +180,15 @@ $(SMOKE_ASAN): $(OBJ_DIR)/asan/tests/smoke_app.o $(ASAN_LIBS)
 	$(CXX) $(ASAN_FLAGS) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
 
 test: host
-	$(UNIT_TEST)
+	NBT_TEST_FAKE_A2I=$(abspath $(FAKE_A2I)) $(UNIT_TEST)
 	$(FRONTEND_TEST)
 	$(GL_LOOPBACK)
 	NBT_SDK_BUILD_DIR=$(BUILD_DIR) $(PYTHON) -m unittest discover -s tests -v
 	@$(MAKE) --no-print-directory check-generic
 
-test-asan: $(UNIT_ASAN) $(SMOKE_ASAN) $(FRONTEND_ASAN)
-	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(UNIT_ASAN)
+test-asan: $(UNIT_ASAN) $(SMOKE_ASAN) $(FRONTEND_ASAN) $(FAKE_A2I)
+	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
+		NBT_TEST_FAKE_A2I=$(abspath $(FAKE_A2I)) $(UNIT_ASAN)
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 $(FRONTEND_ASAN)
 	ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1 \
 		NBT_SDK_BUILD_DIR=$(BUILD_DIR) NBT_SDK_SMOKE=$(SMOKE_ASAN) \

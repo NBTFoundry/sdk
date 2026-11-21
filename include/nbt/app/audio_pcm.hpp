@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <stdint.h>
 
+#include "nbt/app/audio_a2i.hpp"
 #include "nbt/app/audio_route.hpp"
 
 namespace nbt {
@@ -24,7 +25,10 @@ typedef void (*AudioRenderFn)(void* context, int16_t* out_lr, int frames);
 /* Stereo S16LE output: libasound loaded at run time (io-audio's libasound on
  * the head unit, ALSA on a Linux host), a playback thread pulling from a
  * render callback, and the head unit's audio connection (AudioRoute).
- * NBT_NO_AUDIO=1 skips the device. One open instance per process. */
+ * NBT_AUDIO_A2I=<io-amp input> plays straight into that input through A2I
+ * instead (A2iOutput, 44100 Hz), for a connection whose source is not the
+ * browser's libasound input. NBT_NO_AUDIO=1 skips the device. One open
+ * instance per process. */
 class AudioPcm {
  public:
   AudioPcm();
@@ -35,7 +39,7 @@ class AudioPcm {
   bool open(int preferred_rate, AudioRenderFn render, void* context, bool route_wanted);
   void close();
 
-  bool active() const { return pcm_handle_ != NULL && thread_running_; }
+  bool active() const { return (pcm_handle_ != NULL || a2i_.is_open()) && thread_running_; }
   /* The device's rate once open (else the requested rate). */
   int sample_rate() const { return sample_rate_; }
   int frag_frames() const { return frag_frames_; }
@@ -49,6 +53,7 @@ class AudioPcm {
 
   static void* thread_entry(void* arg);
   void playback_loop();
+  void a2i_loop(int16_t* buf, int frames);
   bool open_device();
   void close_device();
 
@@ -63,6 +68,7 @@ class AudioPcm {
   volatile bool stop_requested_;
   pthread_t thread_;
   AudioRoute route_;
+  A2iOutput a2i_;
 };
 
 }  // namespace app

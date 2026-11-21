@@ -85,7 +85,15 @@ bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, boo
   stop_requested_ = false;
   g_pcm_open = true;
   owner_ = true;
-  if (!open_device()) {
+  const char* a2i = getenv("NBT_AUDIO_A2I");
+  if (a2i && a2i[0]) {
+    sample_rate_ = kA2iRate;
+    frag_frames_ = kA2iBufferBytes / 4;
+    if (!a2i_.open(a2i, kA2iRate, kA2iBufferBytes, kA2iBuffers)) {
+      close_device();
+      return false;
+    }
+  } else if (!open_device()) {
     close_device();
     return false;
   }
@@ -250,6 +258,7 @@ bool AudioPcm::open_device() {
 }
 
 void AudioPcm::close_device() {
+  a2i_.close();
   if (pcm_handle_) {
 #ifdef __QNXNTO__
     snd_pcm_t* pcm = static_cast<snd_pcm_t*>(pcm_handle_);
@@ -283,6 +292,11 @@ void AudioPcm::playback_loop() {
   const int frames = (frag_frames_ >= 64 && frag_frames_ <= 2048) ? frag_frames_ : kAudioFragFrames;
   int16_t* buf = static_cast<int16_t*>(calloc(static_cast<size_t>(frames * 2), sizeof(int16_t)));
   if (!buf) return;
+  if (a2i_.is_open()) {
+    a2i_loop(buf, frames);
+    free(buf);
+    return;
+  }
 #ifdef __QNXNTO__
   int consecutive_errors = 0;
   uint64_t writes_ok = 0;
@@ -346,6 +360,23 @@ void AudioPcm::playback_loop() {
 #endif
   }
   free(buf);
+}
+
+void AudioPcm::a2i_loop(int16_t* buf, int frames) {
+  int failures = 0;
+  while (!stop_requested_) {
+    render_(render_context_, buf, frames);
+    if (a2i_.write(buf, frames)) {
+      failures = 0;
+      continue;
+    }
+    if (stop_requested_) break;
+    if (++failures > 50) {
+      log_info("a2i audio stopped after repeated write failures");
+      break;
+    }
+    usleep(10000);
+  }
 }
 
 }  // namespace app

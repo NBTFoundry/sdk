@@ -162,7 +162,8 @@ context current, then shows a black frame so the manager can bind the surface.
 
 | Header | API |
 | --- | --- |
-| `nbt/app/audio_pcm.hpp` | `AudioPcm::open(rate, render, ctx, route_wanted)`: stereo S16LE output through libasound loaded at run time (io-audio on the head unit, ALSA on a host) and a playback thread that calls `render`. `NBT_NO_AUDIO=1` skips the device. One instance per process. |
+| `nbt/app/audio_pcm.hpp` | `AudioPcm::open(rate, render, ctx, route_wanted)`: stereo S16LE output through libasound loaded at run time (io-audio on the head unit, ALSA on a host) and a playback thread that calls `render`. `NBT_AUDIO_A2I=<io-amp input>` (from NBT Manager's Native audio setting) plays straight into that input of the head unit through its `liba2i_client` at 44100 Hz instead. `NBT_NO_AUDIO=1` skips the device. One instance per process. |
+| `nbt/app/audio_a2i.hpp` | `A2iOutput`: blocking 16-bit stereo playback into one io-amp input through the head unit's `liba2i_client` (`NBT_A2I_LIB` for a test double); what `AudioPcm` uses under `NBT_AUDIO_A2I`. |
 | `nbt/app/audio_route.hpp` | `AudioRoute`: builds and releases the head unit's audio connection with `audioconn` (default connection 0xb8). `NBT_AUDIO_CONN` overrides the connection (0 turns routing off), `NBT_AUDIOCONN` the binary, and `<data_dir>/audio-conn` names another connection. |
 | `nbt/app/audio_mixer.hpp` | `AudioMixer` (libnbt-audio-mixer): 16 channels of 8-bit unsigned or 16-bit signed mono samples, each with a 16.16 step and left/right volume, mixed over an optional music renderer. Muting also releases the audio connection. |
 

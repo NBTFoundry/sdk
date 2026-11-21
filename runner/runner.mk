@@ -19,17 +19,25 @@ NBT_RUNNER_OBJS := $(RUNNER_COMMON_OBJS) $(addprefix $(RUNNER_OBJ)/,nbt_runner.o
 RUNNER_PROBE_QNX := $(BUILD_DIR)/runner-probe-qnx
 RUNNER_PROBE_OBJS := $(RUNNER_COMMON_OBJS) $(RUNNER_OBJ)/runner_probe.o
 
-$(RUNNER_OBJ)/%.o: runner/%.cpp $(GL_STREAM_GEN) | qnx-env
+# Static pattern rules: the QNX environment's make (3.81) takes the first
+# matching implicit rule, the top Makefile's $(OBJ_DIR)/qnx/%.o, which lacks
+# RUNNER_FLAGS; a static pattern rule wins in every make.
+RUNNER_CXX_OBJS := $(RUNNER_OBJ)/nbt_runner.o
+$(RUNNER_CXX_OBJS): $(RUNNER_OBJ)/%.o: runner/%.cpp $(GL_STREAM_GEN) | qnx-env
 	@mkdir -p $(dir $@)
 	. "$(QNX_ENV)" && $(QCC) $(QNX_CXXFLAGS) $(RUNNER_FLAGS) $(QNX_DEPFLAGS) -c $< -o $@
 
 # The runners' C sources: their own, the shared benchmark, the generated decoders.
+RUNNER_C_OBJS := $(addprefix $(RUNNER_OBJ)/,host_sys.o module_loader.o guest_server.o gl_runner.o \
+	fake_gl.o runner_probe.o)
 define runner_c
-$(RUNNER_OBJ)/%.o: $(1)/%.c $(GL_STREAM_GEN) | qnx-env
+$(1): $(RUNNER_OBJ)/%.o: $(2)/%.c $(GL_STREAM_GEN) | qnx-env
 	@mkdir -p $$(dir $$@)
 	. "$$(QNX_ENV)" && $$(QCC) $$(QNX_CFLAGS) $$(RUNNER_FLAGS) $$(QNX_DEPFLAGS) -c $$< -o $$@
 endef
-$(foreach d,runner common $(GL_STREAM_DIR),$(eval $(call runner_c,$(d))))
+$(eval $(call runner_c,$(RUNNER_C_OBJS),runner))
+$(eval $(call runner_c,$(RUNNER_OBJ)/membench.o,common))
+$(eval $(call runner_c,$(RUNNER_OBJ)/gl_decode.o,$(GL_STREAM_DIR)))
 
 $(NBT_RUNNER): $(NBT_RUNNER_OBJS) $(LIB_DIR)/libnbt-sdk-qnx.a | qnx-env
 	. "$(QNX_ENV)" && $(QCC) $(QNX_CPP_VARIANT) -lang-c++ $(NBT_RUNNER_OBJS) $(LIB_DIR)/libnbt-sdk-qnx.a \

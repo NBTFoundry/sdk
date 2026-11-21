@@ -294,6 +294,11 @@ void test_file_list() {
   CHECK(!list->load("/nonexistent/folder", kExtensions) && list->count() == 0);
   CHECK(app::file_name_valid("x.sfc") && !app::file_name_valid("x") &&
         !app::file_name_valid("a/b.c"));
+  /* UTF-8 characters, as NBT Manager stores them; not Latin-1 or broken UTF-8. */
+  CHECK(app::file_name_valid("Pok\xc3\xa9mon.sfc") &&
+        app::file_name_valid("\xe3\x83\x9d\xe3\x82\xb1.sfc") &&
+        !app::file_name_valid("Pok\xe9mon.sfc") && !app::file_name_valid("a\xc3.sfc") &&
+        !app::file_name_valid("a\xc0\xaf.sfc") && !app::file_name_valid("a\xc2\x85.sfc"));
   /* Game folders (`|folders`): one entry each, opened at their main file. */
   char game[160], other[160], loose[160];
   snprintf(game, sizeof(game), "%s/Tekken 3", dir);

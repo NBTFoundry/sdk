@@ -18,8 +18,47 @@ namespace {
 
 const size_t kNameMax = 96;
 
-bool forbidden(unsigned char c) {
-  return c < 32 || c > 126 || strchr("/\\:*?\"<>|", c) != NULL;
+/* The length (1-4) of the character at `s` (at most `left` bytes) when a
+ * stored name may hold it: printable ASCII but / \ : * ? " < > |, or a
+ * well-formed UTF-8 character from U+00A0 on (no surrogates, at most
+ * U+10FFFF); 0 otherwise. NBT Manager's nbt_files_char_length. */
+size_t char_length(const char* s, size_t left) {
+  if (!left) return 0;
+  const unsigned char c = static_cast<unsigned char>(s[0]);
+  if (c < 0x80) return c >= 32 && c <= 126 && !strchr("/\\:*?\"<>|", c) ? 1 : 0;
+  size_t n;
+  uint32_t point;
+  if (c >= 0xc2 && c <= 0xdf) {
+    n = 2;
+    point = c & 0x1fu;
+  } else if (c >= 0xe0 && c <= 0xef) {
+    n = 3;
+    point = c & 0x0fu;
+  } else if (c >= 0xf0 && c <= 0xf4) {
+    n = 4;
+    point = c & 0x07u;
+  } else {
+    return 0;
+  }
+  if (left < n) return 0;
+  for (size_t i = 1; i < n; ++i) {
+    const unsigned char b = static_cast<unsigned char>(s[i]);
+    if ((b & 0xc0u) != 0x80u) return 0;
+    point = (point << 6) | (b & 0x3fu);
+  }
+  static const uint32_t kLeast[5] = {0, 0, 0x80, 0x800, 0x10000};
+  const bool ok = point >= kLeast[n] && point >= 0xa0 && (point < 0xd800 || point > 0xdfff) &&
+                  point <= 0x10ffff;
+  return ok ? n : 0;
+}
+
+bool chars_valid(const char* text, size_t length) {
+  for (size_t i = 0; i < length;) {
+    const size_t n = char_length(text + i, length - i);
+    if (!n) return false;
+    i += n;
+  }
+  return true;
 }
 
 /* Case-insensitive first, so "b.sfc" sorts between "A.sfc" and "C.sfc";
@@ -36,11 +75,8 @@ bool file_name_valid(const char* name) {
   size_t n = 0;
   while (n <= kNameMax && name[n]) ++n;
   if (!n || n > kNameMax || name[0] == '.' || name[0] == ' ' || name[n - 1] == '.' ||
-      name[n - 1] == ' ') {
+      name[n - 1] == ' ' || !chars_valid(name, n)) {
     return false;
-  }
-  for (size_t i = 0; i < n; ++i) {
-    if (forbidden(static_cast<unsigned char>(name[i]))) return false;
   }
   const char* dot = strrchr(name, '.');
   return dot && dot != name && dot[1];
@@ -67,14 +103,8 @@ namespace {
 bool folder_name_valid(const char* name) {
   size_t n = 0;
   while (n <= 95 && name[n]) ++n;
-  if (!n || n > 95 || name[0] == '.' || name[0] == ' ' || name[n - 1] == '.' ||
-      name[n - 1] == ' ') {
-    return false;
-  }
-  for (size_t i = 0; i < n; ++i) {
-    if (forbidden(static_cast<unsigned char>(name[i]))) return false;
-  }
-  return true;
+  return n && n <= 95 && name[0] != '.' && name[0] != ' ' && name[n - 1] != '.' &&
+         name[n - 1] != ' ' && chars_valid(name, n);
 }
 
 /* The position of `name`'s extension in `mains`, or -1. */

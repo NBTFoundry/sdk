@@ -18,7 +18,8 @@ AudioPcm::AudioPcm()
       owner_(false),
       thread_running_(false),
       stop_requested_(false),
-      thread_() {}
+      thread_(),
+      a2i_(NULL) {}
 
 AudioPcm::~AudioPcm() {
   close();

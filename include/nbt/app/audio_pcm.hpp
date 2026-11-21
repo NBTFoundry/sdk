@@ -39,7 +39,9 @@ class AudioPcm {
   bool open(int preferred_rate, AudioRenderFn render, void* context, bool route_wanted);
   void close();
 
-  bool active() const { return (pcm_handle_ != NULL || a2i_.is_open()) && thread_running_; }
+  bool active() const {
+    return (pcm_handle_ != NULL || (a2i_ && a2i_->is_open())) && thread_running_;
+  }
   /* The device's rate once open (else the requested rate). */
   int sample_rate() const { return sample_rate_; }
   int frag_frames() const { return frag_frames_; }
@@ -68,7 +70,7 @@ class AudioPcm {
   volatile bool stop_requested_;
   pthread_t thread_;
   AudioRoute route_;
-  A2iOutput a2i_;
+  A2iOutput* a2i_; /* NBT_AUDIO_A2I only; never in a module */
 };
 
 }  // namespace app

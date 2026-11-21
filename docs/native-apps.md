@@ -65,6 +65,8 @@ Manager integration is deferred until the car experiment succeeds; see "Not done
 
 ## Testing without a head unit
 
+`make test` runs the guest GL stream on the desktop's own driver (`tests/gl_loopback.cpp`, Mesa through surfaceless EGL): the front end draws the same scene with direct GL calls, then through the guest's encoders and the runner's decoders, and both must give the same pixels with no GL error. It needs no QNX file; without Mesa's EGL it says SKIPPED.
+
 `make vm-test QNX_ENV=… QNX_SCREEN_LIBDIR=…` boots QNX 6.5.0 SP1 for ARMv7 under QEMU (`tools/qnx65-vm/run.sh`) and checks:
 - C and C++ in both modes, plus crash and hang detection;
 - the lifecycle and settings through `nbt-runner`;

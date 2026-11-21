@@ -9,7 +9,8 @@ GUEST_OBJ := $(OBJ_DIR)/guest
 # The GL command stream (include/nbt/gl_stream.h): generated encoders for the
 # guest, generated decoders for the runner (runner/runner.mk).
 GL_STREAM_DIR := $(BUILD_DIR)/gl-stream
-GL_STREAM_GEN := $(addprefix $(GL_STREAM_DIR)/,gl_commands.h gl_encode.c gl_decode.c gl_functions.h)
+GL_STREAM_GEN := $(addprefix $(GL_STREAM_DIR)/,gl_commands.h gl_encode.c gl_decode.c gl_functions.h \
+	gl_redirect.h)
 $(GL_STREAM_GEN) &: tools/gen_gl_stream.py tools/glregistry.py third_party/OpenGL-Registry/xml/gl.xml
 	@mkdir -p $(GL_STREAM_DIR)
 	$(PYTHON) tools/gen_gl_stream.py third_party/OpenGL-Registry/xml/gl.xml $(GL_STREAM_DIR)

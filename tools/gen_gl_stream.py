@@ -10,6 +10,7 @@ and the runner executes them on its context. From Khronos' gl.xml this writes:
   gl_encode.c     (guest)   one encoder per command, the table for gl_proc
   gl_decode.c     (runner)  one decoder per command: checks, then the call
   gl_functions.h  (runner)  the table of the driver's entry points
+  gl_redirect.h   (tests)   gl* calls through a table (tests/gl_loopback.cpp)
 
 Commands whose sizes depend on GL state are hand-written on both sides
 (guest/gl_stream.c, runner/gl_runner.c) and only declared here.
@@ -219,7 +220,18 @@ def generate(commands):
             "    if (!(slots[i] = lookup(nbtgl_names[i]))) ++missing;",
             "  return missing;",
             "}"]
-    return {"gl_commands.h": ids, "gl_encode.c": enc, "gl_decode.c": dec, "gl_functions.h": fns}
+    # Desktop tests (tests/gl_loopback.cpp): code compiled with this header
+    # makes its gl* calls through a table, pointed at the driver or the stream.
+    red = [BANNER, "#ifndef NBT_GL_REDIRECT_H", "#define NBT_GL_REDIRECT_H", "",
+           "#include \"gl_functions.h\"", "", "#ifdef __cplusplus", "extern \"C\" {", "#endif",
+           "extern struct nbtgl_functions nbtgl_app;", "#ifdef __cplusplus", "}", "#endif", "",
+           "/* X(name) for every command, in the table's order. */", "#define NBTGL_COMMANDS(X) \\"]
+    red += ["  X(%s) \\" % c.name[2:] for c in commands]
+    red += [""]
+    red += ["#define %s nbtgl_app.%s" % (c.name, c.name[2:]) for c in commands]
+    red += ["", "#endif"]
+    return {"gl_commands.h": ids, "gl_encode.c": enc, "gl_decode.c": dec, "gl_functions.h": fns,
+            "gl_redirect.h": red}
 
 
 def main():

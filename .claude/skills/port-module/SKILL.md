@@ -1,12 +1,13 @@
 ---
 name: port-module
-description: Build an application ported to the NBT App SDK without the QNX SDP - as a module loaded into nbt-runner, or as a guest, nbt-runner's child process and the only form for GPL or LGPL code - with the payload and licence check, a bundle for today's NBT Manager and a run in the QNX 6.5 VM. Use when an app needs a module or guest build.
+description: Build an application ported to the NBT App SDK without the QNX SDP - as a module loaded into nbt-runner, or as a guest, nbt-runner's child process and the only form for GPL or LGPL code - with the payload and licence check, its package (bridge 1.7 runner), a bundle for older managers and a run in the QNX 6.5 VM. Use when an app needs a module or guest build.
 ---
 <!-- SPDX-License-Identifier: MPL-2.0 -->
 # Modules and guests
 
-Background: `sdk/docs/native-apps.md`. Examples: nf-snes9x's `module` and
-`module-bundle` targets; the `guest` target of https://github.com/NBTFoundry/nf-doom.
+Background: `sdk/docs/native-apps.md`. Examples: nf-snes9x's `module`
+target; the `guest` targets of https://github.com/NBTFoundry/nf-doom and
+nf-pcsx-rearmed.
 
 | | Module | Guest |
 | --- | --- | --- |
@@ -32,12 +33,16 @@ Background: `sdk/docs/native-apps.md`. Examples: nf-snes9x's `module` and
    writes `<payload>.map` and runs `tools/check_module.py`: shape, ABI note, no
    Thumb code, and the licence gate (GPL or LGPL only in a guest).
    A failure there is a build failure: fix the cause, never the check.
-4. **Bundle** for today's NBT Manager, which does not run payloads itself yet:
-   `<name>-bundle: <payload> $(NBT_SDK_RUNNER)` running
+4. **Package the payload** itself: NBT Manager ships `nbt-runner` and starts
+   it for a payload with the note. `release/package.args` declares
+   `--bridge 1.7` and `runner` in `--bridge-uses` (never optional;
+   port-package), and `make package` takes `build/nbt-<name>.so` or `.guest`.
+   The CI release passes `qnx: false` to the manager's `app-release.yml`
+   with `build: make -j"$(nproc)" module` (or `guest`) and that payload
+   (port-release): no QNX SDP, no private image. Only for a manager before
+   bridge 1.7, a bundle: `<name>-bundle: <payload> $(NBT_SDK_RUNNER)` running
    `$(NBT_SDK_BUNDLE) <payload> $@` (the runner needs `QNX_ENV` and
-   `QNX_SCREEN_LIBDIR`); package it with
-   `make package PACKAGE_INPUT=build/nbt-<name>-bundle`. Bundles are for car
-   tests (port-car-test); what releases ship is the user's call.
+   `QNX_SCREEN_LIBDIR`), packaged as an ordinary executable (no `runner`).
 5. **VM run** (no GPU, no sound: fake both), from the SDK after
    `make nbt-runner QNX_ENV=… QNX_SCREEN_LIBDIR=…`; payload file names must end
    in `.so`, `.guest` or `-bundle` (copied byte for byte):
@@ -70,4 +75,5 @@ Defaults until the car session settles them: aligned accesses
 (`NBT_MOD_UNALIGNED=0`; the VM faults on unaligned ones), no NEON, ARM state.
 
 Check: `make module` (or `guest`) links and passes its check; the VM run
-passes; the bundle installs on the car (port-car-test).
+passes; the package installs on the car (port-car-test, a manager kit with
+the runner).

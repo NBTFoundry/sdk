@@ -18,7 +18,10 @@ Reference: nf-android-auto `.github/workflows/`, manager
    reads `release/sdk.ref`, then
    `uses: NBTFoundry/manager/.github/workflows/app-release.yml@<manager commit>`
    with `secrets: inherit`, `build: make -j"$(nproc)" qnx qnx-check` and
-   `payload: build/nbt-<name>-qnx`.
+   `payload: build/nbt-<name>-qnx`. An application built without the QNX
+   SDP (port-module) passes `qnx: false`, `build: make -j"$(nproc)" module`
+   (or `guest`) and `payload: build/nbt-<name>.so` (or `.guest`): the job
+   installs the SDK's toolchain and needs no build image (skip steps 5-6).
 3. **GitHub settings**, same as the other nf-* repositories (`R=NBTFoundry/nf-<name>`):
    ```sh
    gh api -X PUT repos/$R/environments/release --input - <<'EOF'

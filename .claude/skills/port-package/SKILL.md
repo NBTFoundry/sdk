@@ -26,8 +26,13 @@ status,live-settings,gamepad
 ```
 
 - `--app`: the lowercase id from port-survey; never changes.
-- `--bridge`: the SDK's bridge version, 1.5 today. The manager does not
-  start an application declaring an older one.
+- `--bridge`: the bridge version, 1.5 or newer (1.6 for `hold`, `car-data`,
+  `net`; 1.7 for `runner`). The manager does not start an application
+  declaring an older one than 1.5.
+- A module or guest (port-module) declares `--bridge 1.7` and `runner` in
+  `--bridge-uses`, never optional: the manager's runner starts it. The
+  packer refuses `runner` without the payload's NBT ABI note, and the note
+  without `runner`.
 - Capabilities (bridge 1.5): `show`, `status`, `live-settings`, `controller`,
   `gamepad`, `files`, `most`. `--bridge-uses`: those it cannot run without
   (`show` only if it draws on the manager's surface); `--bridge-optional`:

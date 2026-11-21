@@ -35,7 +35,18 @@ app.guest: $(OBJS) $(NBT_SDK_MOD_DEPS)       # a guest
 	$(call nbt_guest_link,$@,$(OBJS),GPL-2.0-or-later)
 ```
 
-`$(NBT_SDK_BUNDLE) app.so app-bundle` appends a payload to `nbt-runner`, giving one executable that today's manager installs unchanged.
+The payload itself is the package's executable: NBT Manager releases carry `nbt-runner` (bridge 1.7, capability `runner`) and start it for any payload with the NBT ABI note. The package declares it in its `release/package.args`:
+
+```
+--bridge
+1.7
+--bridge-uses
+runner,controller
+```
+
+`runner` is always in `--bridge-uses`, never optional: a manager without the runner refuses the package instead of failing at its first start. The manager's `tools/package.py` requires the declaration exactly when the payload has the note. A signed release of such an application builds on a plain runner with this toolchain only (the manager's `app-release.yml` with `qnx: false`): nothing from the QNX SDP, no private build image.
+
+For a manager before bridge 1.7, `$(NBT_SDK_BUNDLE) app.so app-bundle` appends the payload to a copy of `nbt-runner`, giving one ordinary executable (it needs the SDP to build the runner).
 
 Worked examples: the `module` and `guest` targets of the NBTFoundry application repositories.
 
@@ -59,9 +70,7 @@ Portable code's probes get plain answers (toolchain 1.1.0 or newer): thread sche
 
 ## The runner
 
-`make nbt-runner` builds it with the QNX SDP (`QNX_ENV`, `QNX_SCREEN_LIBDIR`). It is an ordinary NBT application: it takes the manager's bridge descriptors, then runs the payload named by `--nbt-payload PATH`. With no `--nbt-payload`, it runs a payload appended to its own executable, copied to the data folder (or `/dev/shmem`). Before running anything, it checks the payload's `.note.nbt` (ABI major and minor, module or guest).
-
-Manager integration is deferred until the car experiment succeeds; see "Not done yet" below.
+`make nbt-runner` builds it with the QNX SDP (`QNX_ENV`, `QNX_SCREEN_LIBDIR`). NBT Manager builds it from the SDK commit its `sdk.ref` names and ships it in its signed release (the `NBTRLS3` component `runner`, staged beside the manager's worker). It is an ordinary NBT application: it takes the manager's bridge descriptors, then runs the payload named by `--nbt-payload PATH`, which the manager passes for an installed payload with the note. With no `--nbt-payload`, it runs a payload appended to its own executable (a bundle), copied to the data folder (or `/dev/shmem`). Before running anything, it checks the payload's `.note.nbt` (ABI major and minor, module or guest): another major or a newer minor stops it with `needs runtime X.Y; this runner has A.B`, so an install's health check fails cleanly.
 
 ## Testing without a head unit
 
@@ -76,14 +85,14 @@ The VM has no GPU or sound card. Its kernel mishandles a thread's first FPU inst
 
 ## The car session
 
-The car session answers what the VM can't. It runs packages built from bundles (`tools/nbt_bundle.py`: the runner with the payload appended), so today's manager installs them unchanged:
+The car session answers what the VM can't. Its packages are payloads run by the manager's runner (or bundles, `tools/nbt_bundle.py`, on a manager before bridge 1.7):
 - `car-probe.so`, run with `NBT_RUNNER_BENCH=1`:
   - GL frame times (p50/p99);
   - a 10 s tone;
   - `memcpy`, `memset` and `malloc` speed against the car's `libc.so.3`;
   - whether NEON registers d16–d31 survive context switches.
 - `make NBT_MOD_UNALIGNED=1 BUILD_DIR=build/unaligned car-probe`: the same probe allowing unaligned accesses. If it runs, unaligned access is allowed on the car, and picolibc's faster ARMv7-A `memcpy` becomes usable.
-- an emulator built as a module and bundled (`make module-bundle`): frame time and CPU against its SDP build on the same content.
+- an emulator built as a module: frame time and CPU against its SDP build on the same content.
 - a GPL GL game as a guest: the GL stream on the real driver.
 
 ## Compatibility
@@ -99,10 +108,6 @@ Applications and the runner are built and shipped apart: a payload keeps working
 
 ## Not done yet
 
-- **Manager integration:**
-  - launching through the runner when a payload carries `.note.nbt`;
-  - checking the note at install;
-  - adding the runner as a component of the signed manager release.
 - **Guest GL limits:**
   - one GL thread;
   - `glGetUniform*v` is not streamed;

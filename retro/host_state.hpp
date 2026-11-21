@@ -28,6 +28,7 @@ namespace nbt {
 namespace retro {
 
 enum MenuKind { kMenuClosed, kMenuPause, kMenuGames };
+enum { kLabelSize = frontend::Menu::kTextMax + 1 };
 
 struct Host {
   explicit Host(const HostConfig& c);
@@ -58,9 +59,16 @@ struct Host {
    * not give are NULL. */
   struct retro_disk_control_ext_callback disk;
 
+  /* The game list: the files' indexes in the order shown (by label with
+   * HostConfig::describe, which may leave some out). */
+  uint16_t list_order[app::FileList::kMaxFiles];
+  char list_labels[app::FileList::kMaxFiles][kLabelSize];
+  size_t list_count;
+
   /* The game. */
   bool loaded;
-  char game[97]; /* its file name */
+  char game[97];          /* its file name */
+  char title[kLabelSize]; /* its name for people: the label, else the file name */
   void* content;
   uint64_t sram_hash;
   uint64_t sram_checked_ms;
@@ -97,6 +105,8 @@ bool load_state(Host& h);
 void notice(Host& h, uint64_t now_ms, const char* fmt, ...);
 /* The data folder's sub-folder `name`, created when absent: "<data>/<name>". */
 bool data_path(const Host& h, const char* name, const char* file, char* out, size_t size);
+/* The frame's display aspect: the application's, else the core's geometry's. */
+void update_aspect(Host& h);
 
 }  // namespace retro
 }  // namespace nbt

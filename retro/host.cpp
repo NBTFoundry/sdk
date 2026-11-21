@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #include "host_state.hpp"
@@ -126,7 +127,7 @@ void open_pause(Host& h) {
   h.menu_input.reset();
   h.audio.clear();
   h.menu_kind = kMenuPause;
-  h.menu.open(h.game);
+  h.menu.open(h.title);
   h.menu.add("Resume");
   snprintf(text, sizeof(text), "Save state (slot %u)", h.slot);
   h.menu.add(text);
@@ -153,6 +154,31 @@ void open_pause(Host& h) {
   h.menu.set_note(text);
 }
 
+/* The entries of the game list, in the order shown: every file by name, or
+ * those the application describes, by label (without regard to case). */
+void list_games(Host& h) {
+  char (*labels)[kLabelSize] = h.list_labels;
+  h.list_count = 0;
+  for (size_t i = 0; i < h.files.count() && h.list_count < frontend::Menu::kMaxItems - 1; ++i) {
+    char label[kLabelSize] = "";
+    if (h.config.describe) {
+      if (!h.config.describe(h.files.at(i).name, label, sizeof(label))) continue;
+      label[sizeof(label) - 1] = '\0';
+    }
+    if (!label[0]) snprintf(label, sizeof(label), "%s", h.files.at(i).name);
+    /* Insertion by label: a few hundred entries at most. */
+    size_t at = h.list_count;
+    for (; h.config.describe && at > 0 && strcasecmp(labels[at - 1], label) > 0; --at) {
+      memcpy(labels[at], labels[at - 1], sizeof(label));
+      h.list_order[at] = h.list_order[at - 1];
+    }
+    memcpy(labels[at], label, sizeof(label));
+    h.list_order[at] = static_cast<uint16_t>(i);
+    ++h.list_count;
+  }
+  for (size_t i = 0; i < h.list_count; ++i) h.menu.add(labels[i]);
+}
+
 void open_games(Host& h) {
   char title[96], last[97] = "";
   h.mapper.release_all();
@@ -163,10 +189,8 @@ void open_games(Host& h) {
   h.menu_kind = kMenuGames;
   snprintf(title, sizeof(title), "%s: choose a game", h.config.system ? h.config.system : "Games");
   h.menu.open(title);
-  for (size_t i = 0; i < h.files.count() && i < frontend::Menu::kMaxItems - 1; ++i) {
-    h.menu.add(h.files.at(i).name);
-  }
-  if (!h.files.count()) {
+  list_games(h);
+  if (!h.list_count) {
     h.menu.add("Quit");
     h.menu.set_note("No games yet. Send them from the NBT Manager phone app,",
                     "or import them from a USB stick: hold this app > Files.");
@@ -181,10 +205,12 @@ void open_games(Host& h) {
     memcpy(last, text, size);
     free(text);
     const int found = h.files.find(last);
-    if (found >= 0) h.menu.set_focus(static_cast<size_t>(found));
+    for (size_t i = 0; found >= 0 && i < h.list_count; ++i) {
+      if (h.list_order[i] == found) h.menu.set_focus(i);
+    }
   }
   char note[64];
-  snprintf(note, sizeof(note), "%u games", static_cast<unsigned>(h.files.count()));
+  snprintf(note, sizeof(note), "%u games", static_cast<unsigned>(h.list_count));
   h.menu.set_note(note);
 }
 
@@ -242,9 +268,9 @@ void menu_keys(Host& h, uint64_t now) {
     if (r != frontend::Menu::kSelected) continue;
     if (h.menu_kind == kMenuPause) {
       pause_choice(h, now);
-    } else if (!h.files.count()) {
+    } else if (!h.list_count || h.menu.focus() >= h.list_count) {
       h.quit = true;
-    } else if (load_game(h, h.menu.focus())) {
+    } else if (load_game(h, h.list_order[h.menu.focus()])) {
       h.menu.close();
       h.menu_kind = kMenuClosed;
     }
@@ -396,8 +422,8 @@ int play(Host& h) {
     }
     bool changed = false;
     char status[25];
-    snprintf(status, sizeof(status), "%.24s", h.loaded ? h.game : "Choosing a game");
-    char* dot = h.loaded ? strrchr(status, '.') : NULL;
+    snprintf(status, sizeof(status), "%.24s", h.loaded ? h.title : "Choosing a game");
+    char* dot = h.loaded && !h.config.describe ? strrchr(status, '.') : NULL;
     if (dot) *dot = '\0';
     h.lifecycle.tick(now, status, &changed);
     if (changed) apply_settings(h);
@@ -438,11 +464,13 @@ Host::Host(const HostConfig& c)
   memset(&info, 0, sizeof(info));
   memset(&av, 0, sizeof(av));
   memset(&disk, 0, sizeof(disk));
-  extensions[0] = game[0] = notice[0] = '\0';
+  extensions[0] = game[0] = title[0] = notice[0] = '\0';
+  list_count = 0;
   extension_list[0] = NULL;
   frame_options.aspect = frontend::kAspectDisplay;
   frame_options.filter = frontend::kFilterSharp;
   frame_options.display_aspect = c.display_aspect;
+  frame_options.rotation = 0;
 }
 
 int run(int argc, char** argv, const HostConfig& config) {

@@ -21,7 +21,11 @@ enum Filter { kFilterSharp, kFilterSmooth, kFilterNearest };
 struct FrameOptions {
   Aspect aspect;
   Filter filter;
-  float display_aspect; /* width / height when shown; 0: the frame's own */
+  float display_aspect; /* width / height when shown (turned); 0: the frame's own */
+  /* Quarter turns counter-clockwise, 0 to 3 (libretro's SET_ROTATION: an
+   * arcade game made for a vertical screen); the frame's row 0 is then on
+   * the left for 1, at the bottom for 2, on the right for 3. */
+  unsigned rotation;
 };
 
 /* A software-rendered frame (an emulator's) drawn on the current OpenGL ES 2

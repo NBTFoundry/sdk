@@ -7,6 +7,7 @@
  *   init | deinit | reset
  *   load <path> size=<n>
  *   system <directory>    (GET_SYSTEM_DIRECTORY, after load)
+ *   rotation <on|refused> (SET_ROTATION, a quarter turn: a game starting "TURN")
  *   unload
  *   disc eject=<0|1> | disc index=<n>   (a game starting "DISCS" has two)
  *   input mask=<hex>      (when port 0's joypad changes)
@@ -199,6 +200,10 @@ bool retro_load_game(const struct retro_game_info* game) {
   if (!game || !game->data) return false;
   say("load %s size=%u", game->path, (unsigned)game->size);
   if (environ_cb(RETRO_ENVIRONMENT_GET_SYSTEM_DIRECTORY, &system) && system) say("system %s", system);
+  if (game->size >= 4 && memcmp(game->data, "TURN", 4) == 0) {
+    unsigned turns = 1;
+    say("rotation %s", environ_cb(RETRO_ENVIRONMENT_SET_ROTATION, &turns) ? "on" : "refused");
+  }
   disc_count = game->size >= 5 && memcmp(game->data, "DISCS", 5) == 0 ? 2 : 1;
   disc_index = 0;
   disc_ejected = false;

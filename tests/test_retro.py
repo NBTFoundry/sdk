@@ -116,7 +116,9 @@ class RetroHostTest(unittest.TestCase):
             "NBT_GAMEPAD_FD": str(self.pad_app.fileno()),
             "NBT_CONTROLLER_FD": str(self.knob_app.fileno()),
         }
-        env.update({"NBT_SETTING_" + k.upper(): v for k, v in settings.items()})
+        env.update({k: v for k, v in settings.items() if k.startswith("NBT_TEST_")})
+        env.update({"NBT_SETTING_" + k.upper(): v for k, v in settings.items()
+                    if not k.startswith("NBT_TEST_")})
         app = App(env, (self.pad_app.fileno(), self.knob_app.fileno()), args)
         app.wait(r"^init$")
         return app
@@ -242,6 +244,37 @@ class RetroHostTest(unittest.TestCase):
         self.press(0)
         app.wait(r"^load ")
         app.wait(r"^drawn 120 of 120$")
+        self.assertEqual(app.stop(), 0)
+
+    def test_games_named_by_the_application_in_label_order(self):
+        with open(os.path.join(self.files, "Bios.fake"), "wb") as f:
+            f.write(b"BIOS")
+        app = self.start(NBT_TEST_DESCRIBE="1")
+        # "Yankee Doodle" (Beta.FK), then "Zulu Warriors" (Alpha.fake); the
+        # BIOS is left out, so the first entry is Beta's.
+        self.press(0)
+        self.press(SOUTH)
+        self.press(0)
+        line = app.wait(r"^load ")
+        self.assertTrue(line.endswith("/Beta.FK size=1"), line)
+        self.assertEqual(app.stop(), 0)
+        # The last game played is focused at its place in that order.
+        with open(os.path.join(self.data, "last-game"), "wb") as f:
+            f.write(b"Alpha.fake")
+        app = self.start(NBT_TEST_DESCRIBE="1")
+        self.press(0)
+        self.press(SOUTH)
+        self.press(0)
+        line = app.wait(r"^load ")
+        self.assertTrue(line.endswith("/Alpha.fake size=7"), line)
+        self.assertEqual(app.stop(), 0)
+
+    def test_a_vertical_game_is_turned(self):
+        with open(os.path.join(self.files, "Tall.fake"), "wb") as f:
+            f.write(b"TURN")
+        app = self.start("--game", "Tall.fake")
+        app.wait(r"^rotation on$")
+        app.wait(r"^drawn \d+ of 120$")
         self.assertEqual(app.stop(), 0)
 
     def test_an_empty_folder_says_how_to_add_games(self):

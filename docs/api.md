@@ -251,7 +251,7 @@ libretro.
 
 | Header | API |
 | --- | --- |
-| `frame_video.hpp` | `FrameVideo`: uploads an RGB565, XRGB8888 or 0RGB1555 frame and draws it at its display aspect, an integer scale or stretched; filters sharp (crisp pixels with smoothed edges), smooth or nearest. `place()` computes the rectangle. |
+| `frame_video.hpp` | `FrameVideo`: uploads an RGB565, XRGB8888 or 0RGB1555 frame and draws it at its display aspect, an integer scale or stretched, turned by quarter turns (`FrameOptions::rotation`, libretro's `SET_ROTATION`); filters sharp (crisp pixels with smoothed edges), smooth or nearest. `place()` computes the rectangle. |
 | `audio_queue.hpp` | `AudioQueue`: frames from the loop to `AudioPcm`'s thread, resampled to the device's rate, the ratio nudged (at most 0.5%) to hold its target fill. `render_callback` is an `AudioRenderFn`. |
 | `pad_profiles.hpp` | `PadMapper`: the application's actions from a `PadProfile` per pad family (byte 3 of the gamepad state, bridge 1.5), a `ControllerProfile` (keys, knob detents as pulses, BACK tap, hold for the menu, long hold to quit) and a `KeyboardProfile`. An action is held while any source holds it; changes reach an `InputSink`. The profile follows the pad plugged in. |
 | `hints.hpp` | Inputs and buttons named as printed: "Cross", "Create", "Push"... |
@@ -281,6 +281,14 @@ core's system folder (BIOS files) is the data folder, or the files folder
 with `HostConfig::system_in_files`, so users add BIOS files as they add
 games. `--game NAME` starts that file of the files folder instead of
 showing the list (VM runs, measurements); an unknown name shows the list.
+
+The list shows file names unless `HostConfig::describe` names the entries:
+called for each file with the core initialised, it gives a label (an arcade
+romset's title for `mslug.zip`) or leaves the entry out (a BIOS set); the list
+is then in label order, and the label names the game in the pause menu and
+the status. A core that asks for a rotation (`SET_ROTATION`, a game made for
+a vertical screen) gets it; with `HostConfig::display_aspect` 0 the frame
+takes the core's aspect ratio (its geometry's, as shown after the turn).
 
 The front end's own settings: `aspect` (`4-3`, `pixel`, `full`), `filter`
 (`sharp`, `smooth`, `nearest`), `sound`, `frameskip` (`off`, `auto`, `1`,

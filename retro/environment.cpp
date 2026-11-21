@@ -120,12 +120,21 @@ bool RETRO_CALLCONV environment(unsigned cmd, void* data) {
       return true;
     case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
       h->av = *static_cast<const struct retro_system_av_info*>(data);
+      update_aspect(*h);
       if (h->av.timing.fps > 1.0) h->frame_ms = 1000.0 / h->av.timing.fps;
       h->audio.configure(h->av.timing.sample_rate, h->pcm.sample_rate());
       return true;
     case RETRO_ENVIRONMENT_SET_GEOMETRY:
       h->av.geometry = *static_cast<const struct retro_game_geometry*>(data);
+      update_aspect(*h);
       return true;
+    case RETRO_ENVIRONMENT_SET_ROTATION: {
+      /* Quarter turns counter-clockwise: the frame is drawn turned. */
+      const unsigned turns = *static_cast<const unsigned*>(data);
+      if (turns > 3) return false;
+      h->frame_options.rotation = turns;
+      return true;
+    }
     case RETRO_ENVIRONMENT_GET_LANGUAGE:
       *static_cast<unsigned*>(data) = RETRO_LANGUAGE_ENGLISH;
       return true;

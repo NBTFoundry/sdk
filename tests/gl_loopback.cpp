@@ -120,6 +120,38 @@ Scene draw(bool stream) {
   return s;
 }
 
+/* A frame red above, blue below, stretched over the display at each
+ * rotation: row 0 (red) at the top, then on the left, at the bottom, on the
+ * right. True when every turn puts it there. */
+bool turned() {
+  using namespace nbt::frontend;
+  static uint16_t image[224][256];
+  for (int y = 0; y < 224; ++y)
+    for (int x = 0; x < 256; ++x) image[y][x] = y < 112 ? 0xf800 : 0x001f;
+  FrameVideo video;
+  CHECK(video.init());
+  const Pixel red = {255, 0, 0}, blue = {0, 0, 255};
+  /* Where row 0 shows, then the opposite side, for 0 to 3 quarter turns. */
+  const int at[4][4] = {{kWidth / 2, kHeight / 4, kWidth / 2, kHeight * 3 / 4},
+                        {kWidth / 4, kHeight / 2, kWidth * 3 / 4, kHeight / 2},
+                        {kWidth / 2, kHeight * 3 / 4, kWidth / 2, kHeight / 4},
+                        {kWidth * 3 / 4, kHeight / 2, kWidth / 4, kHeight / 2}};
+  bool ok = true;
+  for (unsigned turns = 0; turns < 4; ++turns) {
+    const FrameOptions options = {kAspectStretch, kFilterNearest, 0.0f, turns};
+    video.upload(image, 256, 224, 512, kRgb565);
+    video.draw(kWidth, kHeight, options);
+    nbtgl_fn.Finish();
+    const Pixel first = read_pixel(at[turns][0], at[turns][1]);
+    const Pixel last = read_pixel(at[turns][2], at[turns][3]);
+    printf("turned %u: row 0 %u,%u,%u, last row %u,%u,%u\n", turns, first.r, first.g, first.b,
+           last.r, last.g, last.b);
+    ok = ok && first == red && last == blue;
+  }
+  video.shutdown();
+  return ok;
+}
+
 void print(const char* name, const Scene& s) {
   printf("%s: frame %u,%u,%u box %u,%u,%u text %u,%u,%u edge %u,%u,%u GL error 0x%x\n", name,
          s.frame.r, s.frame.g, s.frame.b, s.box.r, s.box.g, s.box.b, s.text.r, s.text.g, s.text.b,
@@ -175,6 +207,7 @@ int main() {
   CHECK(direct.text == (Pixel{255, 255, 255}));
   CHECK(direct.background == (Pixel{0, 0, 0}) || direct.background == (Pixel{0, 0, 255}));
   CHECK(direct.error == GL_NO_ERROR);
+  CHECK(turned());
 
   arena = static_cast<uint8_t*>(calloc(1, kArenaBytes));
   CHECK(arena != NULL);

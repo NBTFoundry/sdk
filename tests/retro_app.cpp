@@ -2,6 +2,10 @@
 /* An emulator application on the libretro host, with tests/fake_core.c for
  * its core (tests/test_retro.py). Its controls follow the SNES pad's shape,
  * as an emulator's would: each face button where the original has it. */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "libretro.h"
 #include "nbt/app/video.hpp"
 #include "nbt/retro/host.hpp"
@@ -56,6 +60,17 @@ const Binding kHostKeys[] = {{'x', RETRO_DEVICE_ID_JOYPAD_A},
 const KeyboardProfile kKeyboard = {kHostKeys, sizeof(kHostKeys) / sizeof(kHostKeys[0]),
                                    nbt::app::kHostKeyEscape};
 
+/* With NBT_TEST_DESCRIBE set (tests/test_retro.py): games named for people
+ * as an arcade emulator names its romsets, "Bios.fake" left out. */
+bool describe(const char* name, char* label, size_t size) {
+  if (!strcmp(name, "Bios.fake")) return false;
+  const char* text = name;
+  if (!strcmp(name, "Alpha.fake")) text = "Zulu Warriors";
+  if (!strcmp(name, "Beta.FK")) text = "Yankee Doodle";
+  snprintf(label, size, "%s", text);
+  return true;
+}
+
 const char* const kRegion[] = {"auto", "auto", "ntsc", "NTSC", "pal", "PAL", NULL};
 const nbt::retro::VariableMap kVariables[] = {{"region", "core_region", kRegion}};
 
@@ -67,5 +82,6 @@ int main(int argc, char** argv) {
                                    NULL,   &profiles,       kVariables,
                                    1,      4.0f / 3.0f,     1024 * 1024,
                                    true /* BIOS files in the files folder */};
+  if (getenv("NBT_TEST_DESCRIBE")) config.describe = describe;
   return nbt::retro::run(argc, argv, config);
 }

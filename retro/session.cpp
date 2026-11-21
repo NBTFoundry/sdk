@@ -111,7 +111,15 @@ bool load_game(Host& h, size_t index) {
   }
   h.loaded = true;
   snprintf(h.game, sizeof(h.game), "%s", entry.name);
+  h.title[0] = '\0';
+  if (h.config.describe && h.config.describe(entry.name, h.title, sizeof(h.title))) {
+    h.title[sizeof(h.title) - 1] = '\0';
+  } else {
+    h.title[0] = '\0';
+  }
+  if (!h.title[0]) snprintf(h.title, sizeof(h.title), "%s", entry.name);
   retro_get_system_av_info(&h.av);
+  update_aspect(h);
   h.frame_ms = h.av.timing.fps > 1.0 ? 1000.0 / h.av.timing.fps : 1000.0 / 60.0;
   h.next_frame_ms = static_cast<double>(app::monotonic_ms());
   h.audio.configure(h.av.timing.sample_rate, h.pcm.sample_rate());
@@ -143,8 +151,19 @@ void unload_game(Host& h) {
   free(h.content);
   h.content = NULL;
   h.loaded = false;
-  h.game[0] = '\0';
+  h.game[0] = h.title[0] = '\0';
+  /* The next game sets its own (SET_ROTATION, geometry). */
+  h.frame_options.rotation = 0;
+  memset(&h.av, 0, sizeof(h.av));
+  update_aspect(h);
   h.audio.clear();
+}
+
+void update_aspect(Host& h) {
+  const float core = h.av.geometry.aspect_ratio;
+  h.frame_options.display_aspect = h.config.display_aspect > 0.0f ? h.config.display_aspect
+                                   : core > 0.0f                  ? core
+                                                                  : 0.0f;
 }
 
 bool save_state(Host& h) {

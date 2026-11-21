@@ -25,7 +25,9 @@ struct HostConfig {
   /* Manager settings feeding core variables. */
   const VariableMap* variables;
   size_t variable_count;
-  /* The display aspect (4:3 for most consoles); 0: the core's. */
+  /* The display aspect (4:3 for most consoles); 0: the core's (its
+   * geometry's aspect_ratio, as shown after a SET_ROTATION, else the
+   * frame's own). */
   float display_aspect;
   /* The largest game file read into memory. */
   size_t max_file_bytes;
@@ -36,6 +38,13 @@ struct HostConfig {
    * and bins): the extensions of the file to open in a game folder, the
    * preferred first (NULL ended); NULL: no game folders. */
   const char* const* folder_mains;
+  /* Names the game list's entries, for games whose file names say little
+   * (an arcade romset "mslug.zip"): called with the core initialised, for
+   * each file or game folder `name`, it writes the entry's label (at most
+   * size - 1 bytes) and returns true, or returns false to leave the entry
+   * out (a BIOS set). The list is then in label order, and the label is the
+   * game's name in the pause menu and the status. NULL: file names. */
+  bool (*describe)(const char* name, char* label, size_t size);
 };
 
 /* The application: the bridge's lifecycle (a health check only reports

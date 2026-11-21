@@ -421,6 +421,26 @@ void test_menu_and_placement() {
   o.aspect = kAspectStretch;
   FrameVideo::place(1440, 540, 256, 224, o, &x, &y, &w, &h);
   CHECK(w == 1440 && h == 540);
+  /* A vertical arcade game: the frame turned a quarter, shown at 3:4; at an
+   * integer scale its height runs across. */
+  o.aspect = kAspectDisplay;
+  o.display_aspect = 3.0f / 4.0f;
+  o.rotation = 1;
+  FrameVideo::place(1440, 540, 256, 224, o, &x, &y, &w, &h);
+  CHECK(w == 405 && h == 540 && x == 517 && y == 0);
+  o.aspect = kAspectInteger;
+  o.rotation = 3;
+  FrameVideo::place(1440, 540, 256, 224, o, &x, &y, &w, &h);
+  CHECK(w == 448 && h == 512 && y == 14);
+  /* Its own shape, unturned and turned. */
+  o.aspect = kAspectDisplay;
+  o.display_aspect = 0.0f;
+  o.rotation = 2;
+  FrameVideo::place(1440, 540, 256, 224, o, &x, &y, &w, &h);
+  CHECK(w == 617 && h == 540);
+  o.rotation = 1;
+  FrameVideo::place(1440, 540, 256, 224, o, &x, &y, &w, &h);
+  CHECK(w == 473 && h == 540);
   ++g_suites;
 }
 

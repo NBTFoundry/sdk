@@ -117,8 +117,14 @@ bool FrameVideo::init() {
   sharp_ = glGetUniformLocation(program_, "u_sharp");
   glGenTextures(1, &texture_);
   glGenBuffers(1, &buffer_);
-  /* Two triangles over the target rectangle; row 0 of a frame at the top. */
-  static const GLfloat kQuad[] = {-1, -1, 0, 1, 1, -1, 1, 1, -1, 1, 0, 0, 1, 1, 1, 0};
+  /* Two triangles over the target rectangle (bottom left, bottom right, top
+   * left, top right), one strip per rotation: the frame upright (row 0 at
+   * the top), then turned a quarter counter-clockwise (row 0 on the left),
+   * a half, three quarters (row 0 on the right). */
+  static const GLfloat kQuad[] = {-1, -1, 0, 1, 1, -1, 1, 1, -1, 1, 0, 0, 1, 1, 1, 0,
+                                  -1, -1, 0, 0, 1, -1, 0, 1, -1, 1, 1, 0, 1, 1, 1, 1,
+                                  -1, -1, 1, 0, 1, -1, 0, 0, -1, 1, 1, 1, 1, 1, 0, 1,
+                                  -1, -1, 1, 1, 1, -1, 1, 0, -1, 1, 0, 1, 1, 1, 0, 0};
   glBindBuffer(GL_ARRAY_BUFFER, buffer_);
   glBufferData(GL_ARRAY_BUFFER, sizeof(kQuad), kQuad, GL_STATIC_DRAW);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -184,6 +190,11 @@ bool FrameVideo::upload(const void* pixels, int width, int height, size_t pitch,
 
 void FrameVideo::place(int window_w, int window_h, int w, int h, const FrameOptions& options,
                        int* out_x, int* out_y, int* out_w, int* out_h) {
+  if (options.rotation & 1u) { /* on its side: the frame's height across */
+    const int turned = w;
+    w = h;
+    h = turned;
+  }
   int rw = window_w, rh = window_h;
   if (w > 0 && h > 0 && options.aspect != kAspectStretch) {
     const int k = window_w / w < window_h / h ? window_w / w : window_h / h;
@@ -227,7 +238,12 @@ void FrameVideo::draw(int window_w, int window_h, const FrameOptions& options, i
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
     glUniform1i(sampler_, 0);
     glUniform2f(size_, static_cast<GLfloat>(width_), static_cast<GLfloat>(height_));
-    const GLfloat sx = static_cast<GLfloat>(rw) / width_, sy = static_cast<GLfloat>(rh) / height_;
+    /* Output pixels per texel along the texture's axes: turned on its side,
+     * its rows run across the screen's height. */
+    const unsigned turns = options.rotation & 3u;
+    const int across = turns & 1u ? rh : rw, down = turns & 1u ? rw : rh;
+    const GLfloat sx = static_cast<GLfloat>(across) / width_,
+                  sy = static_cast<GLfloat>(down) / height_;
     glUniform2f(scale_, sx > 1.0f ? sx : 1.0f, sy > 1.0f ? sy : 1.0f);
     glUniform1f(swizzle_, texture_format_ == kXrgb8888 ? 1.0f : 0.0f);
     glUniform1f(sharp_, options.filter == kFilterSharp ? 1.0f : 0.0f);
@@ -238,7 +254,7 @@ void FrameVideo::draw(int window_w, int window_h, const FrameOptions& options, i
                           4 * sizeof(GLfloat), 0);
     glVertexAttribPointer(static_cast<GLuint>(uv_), 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat),
                           reinterpret_cast<const void*>(2 * sizeof(GLfloat)));
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDrawArrays(GL_TRIANGLE_STRIP, static_cast<GLint>(turns * 4), 4);
     glDisableVertexAttribArray(static_cast<GLuint>(position_));
     glDisableVertexAttribArray(static_cast<GLuint>(uv_));
     glBindBuffer(GL_ARRAY_BUFFER, 0);

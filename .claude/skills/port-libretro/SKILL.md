@@ -21,12 +21,16 @@ Example: nf-snes9x (`src/main.cpp`, `src/controls.*`). The SDK's
    - `variables`: `VariableMap` rows feeding core variables from manager
      settings (setting value, core value pairs); a value the core does not
      list is never given to it;
-   - `display_aspect` (4:3 for most consoles; 0 = the core's);
+   - `display_aspect` (4:3 for most consoles; 0 = the core's, for an arcade
+     core whose games each have their own, turned with `SET_ROTATION`);
    - `max_file_bytes`: the largest game read into memory (a core with
      `need_fullpath` reads its files itself);
    - `system_in_files`: the core finds BIOS files in the files folder, where
      users put them (list their extensions in `--bridge-files`, not in
      `extensions`).
+   - `describe`: when file names say little (arcade romsets, `mslug.zip`),
+     a label per entry from the core's own tables, `false` to leave one out
+     (a BIOS set); the list is then in label order.
    Multi-disc games (`.m3u`) get a disc row in the pause menu when the core
    offers disc control; nothing to configure.
 3. **Settings.** The host owns `aspect`, `filter`, `sound`, `frameskip`,

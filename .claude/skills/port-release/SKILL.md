@@ -9,19 +9,22 @@ Reference: nf-android-auto `.github/workflows/`, manager
 `.github/workflows/app-release.yml` (its header comment), manager
 `ci/qnx/README.md`.
 
-1. **`ci.yml`** (copy nf-android-auto's): on push to `main` and pull
+1. **`ci.yml`** (copy nf-fbneo's for a guest, nf-snes9x's for a module,
+   nf-android-auto's for a native program): on push to `main` and pull
    requests, check out the app with submodules and the SDK at
    `release/sdk.ref`, install the host packages, run `make test`,
-   `test-asan`, `check-static-init` (and `test-upstream`). Pin every action
-   by commit SHA with the version in a comment.
-2. **`release.yml`** (copy nf-android-auto's): on `v*` tags, a `pins` job
+   `test-asan`, `check-static-init` (and `test-upstream`), and build the
+   head-unit form after `make -C sdk toolchain`. Pin every action by commit
+   SHA with the version in a comment.
+2. **`release.yml`** (copy the same repository's): on `v*` tags, a `pins` job
    reads `release/sdk.ref`, then
    `uses: NBTFoundry/manager/.github/workflows/app-release.yml@<manager commit>`
-   with `secrets: inherit`, `build: make -j"$(nproc)" qnx qnx-check` and
-   `payload: build/nbt-<name>-qnx`. An application built without the QNX
-   SDP (port-module) passes `qnx: false`, `build: make -j"$(nproc)" module`
-   (or `guest`) and `payload: build/nbt-<name>.so` (or `.guest`): the job
-   installs the SDK's toolchain and needs no build image (skip steps 5-6).
+   (the latest manager release's commit) with `secrets: inherit`,
+   `qnx: false`, `build: make -j"$(nproc)" guest` (or `module`, or
+   `qnx qnx-check` for a native program) and `payload: build/nbt-<name>.guest`
+   (or `.so`, or `-qnx`): the job installs the SDK's toolchain and needs no
+   build image (skip steps 5-6). A build that embeds Git LFS files adds
+   `lfs: true` (https://github.com/NBTFoundry/nf-doom).
 3. **GitHub settings**, same as the other nf-* repositories (`R=NBTFoundry/nf-<name>`):
    ```sh
    gh api -X PUT repos/$R/environments/release --input - <<'EOF'
@@ -53,7 +56,7 @@ Reference: nf-android-auto `.github/workflows/`, manager
    with `manager/release/apps-public.pem`
    (`openssl pkey -pubout | cmp - ../manager/release/apps-public.pem`), then
    pipe it `| base64 -w0 | gh secret set APPS_SIGNING_KEY --env release -R $R`.
-5. **Build image access:** the user grants the repository read access in the
+5. **Build image access** (only for `qnx: true`, which no application uses today): the user grants the repository read access in the
    `qnx65-build` package settings ("Manage Actions access"); there is no API.
    Ask them.
 6. **Build image contents:** in the manager,

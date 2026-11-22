@@ -13,7 +13,10 @@ Noncommercial with a Required Notice).
    https://github.com/NBTFoundry/nf-doom). `LICENSE` holds ours.
 2. **GPL or LGPL upstream:** a guest only, never linked with QNX code
    (`sdk/docs/native-apps.md`, port-module; `tools/check_module.py` enforces
-   it at link).
+   it at link for the licence you declare). Read the header of every file the
+   build compiles, not only upstream's main licence: one LGPL file makes a
+   module wrong (Snes9x's `filter/snes_ntsc.c`; its module leaves it out and
+   links a stand-in of ours, as the application never uses it).
    Write nothing else about QNX licensing.
 3. **Non-commercial upstream:** the package as a whole is non-commercial.
    Say so in the README's License section and in the notice header.

@@ -15,16 +15,16 @@ people can follow them too. Start with
 
 | Shape | When | SDK parts | Example |
 | --- | --- | --- | --- |
-| Libretro core | upstream has a libretro core | `libnbt-retro` (game list, saves, states, menu, controls) | [nf-snes9x](https://github.com/NBTFoundry/nf-snes9x) |
-| Platform layer | upstream has its own platform layer (SDL, GLUT, `i_*`/`sys_*` files) | `libnbt-sdk`, `libnbt-gles2`, `libnbt-frontend` as needed | [nf-doom](https://github.com/NBTFoundry/nf-doom) |
-| Companion | the program must stay its own process (sockets, other processes, its own protocol) | `nbt/app/child.hpp`, an appended payload | [nf-android-auto](https://github.com/NBTFoundry/nf-android-auto) |
+| Libretro core | upstream has a libretro core | `libnbt-retro` (game list, saves, states, menu, controls) | [nf-snes9x](https://github.com/NBTFoundry/nf-snes9x) (module), [nf-fbneo](https://github.com/NBTFoundry/nf-fbneo) and [nf-pcsx-rearmed](https://github.com/NBTFoundry/nf-pcsx-rearmed) (guests) |
+| Platform layer | upstream has its own platform layer (SDL, GLUT, `i_*`/`sys_*` files) | `libnbt-sdk`, `libnbt-gles2`, `libnbt-frontend` as needed | [nf-doom](https://github.com/NBTFoundry/nf-doom) (guest) |
+| Companion | the program must stay its own process (sockets, other processes, its own protocol) | `nbt/app/child.hpp`, an appended payload | [nf-android-auto](https://github.com/NBTFoundry/nf-android-auto) (native, the toolchain's QNX target) |
 
 ## The licence sets the build form
 
 | Upstream code in the binary | Build form |
 | --- | --- |
-| GPL or LGPL | a guest ([native-apps.md](native-apps.md)): the QNX licence forbids linking GPL code with QNX code, and statically linking LGPL code with it |
-| MPL, permissive, custom non-commercial | a QNX SDP build (`make qnx`), what releases ship today; a module as well when wanted |
+| GPL or LGPL, even one file of it | a guest ([native-apps.md](native-apps.md)): the QNX licence forbids linking GPL code with QNX code, and statically linking LGPL code with it. Check every file the build compiles, not only upstream's main licence (Snes9x's NTSC filter is LGPL: its module leaves it out) |
+| MPL, permissive, custom non-commercial | a module; a program that needs the car's own libraries (a companion) a native QNX program built with the NBT toolchain's QNX target. No QNX SDP either way |
 | none, or no redistribution | not portable: stop |
 
 Our own files are MPL-2.0 unless the combination requires a GPL-compatible
@@ -41,13 +41,16 @@ licence.
   included or checked against the pin, never copied.
 - **Our code:** C++11 (C99), no exceptions, no RTTI, nothing that runs before
   `main`, bounded buffers. Upstream's own static constructors are allowed.
-- **Declare the SDK's bridge version** (1.5): NBT Manager does not start an
-  application declaring an older one.
+- **Declare the bridge version the build needs:** 1.7 with `runner` for a
+  module or a guest. NBT Manager does not start an application declaring one
+  older than 1.5.
 
 ## The head unit
 
-- QNX 6.5.0 SP1 on ARMv7. Releases are built with the QNX 6.5 SP1 toolchain
-  (GCC 4.8.3); the car's C++ runtime is libstdc++ 6.0.13, and nothing may throw.
+- QNX 6.5.0 SP1 on ARMv7. Releases are built with the NBT toolchain (Clang,
+  picolibc, libc++), never the QNX SDP: modules and guests run under the
+  manager's `nbt-runner`; a native program uses the toolchain's QNX target and
+  links the car's own libraries at run time.
 - Under NBT Manager: 256 MiB of data, 512 MiB of address space, 128
   descriptors, 64 threads.
 - A package holds one executable of at most 64 MiB, at most 12 settings and a
@@ -61,7 +64,7 @@ licence.
 | --- | --- |
 | Study upstream, agree on shape, build form and names | `port-survey` |
 | Repository, upstream submodule, skeleton | `port-repo` |
-| Makefile: host, sanitizer and QNX builds | `port-build`, `port-qnx-fixes` |
+| Makefile: host, sanitizer and head-unit builds | `port-build`, `port-qnx-fixes` |
 | Without the QNX SDP: a module, or a guest for GPL or LGPL code | `port-module` |
 | The application itself | `port-libretro`, `port-native` or `port-companion` |
 | Controls | `port-controls` |

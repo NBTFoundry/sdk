@@ -44,6 +44,13 @@ status,live-settings,gamepad
   characters; 1 to 6 choices of `[a-z0-9_-]{1,12}`; the default is one of
   them. The whole manifest stays under 2,048 bytes. The app reads them with
   `lifecycle.settings()` and treats an unknown value as the default.
+- Information the phone app shows before an install: up to 8
+  `--property '<label>|<value>'` (label up to 24, value up to 64 printable
+  ASCII characters) and up to 20 `--text '<line>'` (up to 120; `--text=` for
+  an empty line between paragraphs). Use it for upstream's version and
+  required notices: when the version comes from the pin, generate that line
+  and check it in `make test` (nf-android-auto's `tools/package_args.py`).
+  A manager older than this format refuses such a package.
 - Version and sequence: tag `vX.Y.Z` gives sequence `X*1000000+Y*1000+Z`.
   The app's own numbers, not upstream's. Test packages before the first
   release: `0.0.N` with sequence `N`. The car refuses a sequence that does

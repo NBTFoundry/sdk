@@ -5,6 +5,10 @@ BUILD_DIR ?= build
 override BUILD_DIR := $(abspath $(BUILD_DIR))
 OBJ_DIR := $(BUILD_DIR)/obj
 LIB_DIR := $(BUILD_DIR)/lib
+# Each kind of object rebuilds when its compiler or flags change (nbt-stamp.mk;
+# the stamps are written at the end of this file).
+include nbt-stamp.mk
+stamp = $(OBJ_DIR)/$(1).stamp
 
 # A QNX environment on PATH can set CC/CXX; host builds keep the host compiler.
 ifeq ($(origin CC),default)
@@ -106,35 +110,35 @@ libs-asan: $(ASAN_LIBS) $(call front_libs,asan)
 libs-qnx: $(QNX_LIBS) $(call front_libs,qnx)
 
 # --- Objects ---
-$(OBJ_DIR)/host/%.o: %.cpp
+$(OBJ_DIR)/host/%.o: %.cpp $(call stamp,host)
 	@mkdir -p $(dir $@)
 	$(CXX) $(INC) $(HOST_CXXFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/host/%.o: %.c
+$(OBJ_DIR)/host/%.o: %.c $(call stamp,host)
 	@mkdir -p $(dir $@)
 	$(CC) $(INC) $(HOST_CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/asan/%.o: %.cpp
+$(OBJ_DIR)/asan/%.o: %.cpp $(call stamp,asan)
 	@mkdir -p $(dir $@)
 	$(CXX) $(INC) $(ASAN_CXXFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/asan/%.o: %.c
+$(OBJ_DIR)/asan/%.o: %.c $(call stamp,asan)
 	@mkdir -p $(dir $@)
 	$(CC) $(INC) $(ASAN_CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/qnx/%.o: %.cpp
+$(OBJ_DIR)/qnx/%.o: %.cpp $(call stamp,qnx)
 	@mkdir -p $(dir $@)
 	$(NBT_QNX_CXX) $(QNX_CXXFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/qnx/%.o: %.c
+$(OBJ_DIR)/qnx/%.o: %.c $(call stamp,qnx)
 	@mkdir -p $(dir $@)
 	$(NBT_QNX_CC) $(QNX_CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJ_DIR)/qnx-sdp/%.o: %.cpp | qnx-env
+$(OBJ_DIR)/qnx-sdp/%.o: %.cpp $(call stamp,qnx-sdp) | qnx-env
 	@mkdir -p $(dir $@)
 	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CXXFLAGS) $(QNX_SDP_DEPFLAGS) -c $< -o $@
 
-$(OBJ_DIR)/qnx-sdp/%.o: %.c | qnx-env
+$(OBJ_DIR)/qnx-sdp/%.o: %.c $(call stamp,qnx-sdp) | qnx-env
 	@mkdir -p $(dir $@)
 	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CFLAGS) $(QNX_SDP_DEPFLAGS) -c $< -o $@
 
@@ -175,7 +179,7 @@ $(LIB_DIR)/libnbt-sdk-qnx-sdp.a: $(call objs,qnx-sdp,$(SDK_SRC)) | qnx-env
 	. "$(QNX_ENV)" && $(QNX_AR) rcs $@ $(filter %.o,$^)
 
 # --- Host tests ---
-$(FAKE_A2I): tests/fake_a2i_client.cpp include/nbt/app/audio_a2i.hpp
+$(FAKE_A2I): tests/fake_a2i_client.cpp include/nbt/app/audio_a2i.hpp $(call stamp,host)
 	@mkdir -p $(dir $@)
 	$(CXX) $(INC) $(HOST_CXXFLAGS) -fPIC -shared -fvisibility=hidden $< -o $@
 
@@ -293,34 +297,14 @@ include module/module.mk
 include guest/guest.mk
 include runner/runner.mk
 include tools/qnx65-vm/vm.mk
+include tests/loopback.mk
 
-# The guest GL stream against direct calls on the desktop's driver
-# (tests/gl_loopback.cpp): each side's files linked into one object that keeps
-# only its API global, as the guest and the runner are separate programs.
-LOOPBACK_OBJ := $(OBJ_DIR)/loopback
-LOOPBACK_CFLAGS := $(HOST_CFLAGS) -g -Iinclude -I$(GL_STREAM_DIR)
-# loopback_side(object, sources, include dir, kept symbols)
-define loopback_side
-	@mkdir -p $(dir $(1))
-	$(CC) $(LOOPBACK_CFLAGS) -I$(3) -c $(word 1,$(2)) -o $(1:.o=-a.o)
-	$(CC) $(LOOPBACK_CFLAGS) -I$(3) -c $(word 2,$(2)) -o $(1:.o=-b.o)
-	ld -r $(1:.o=-a.o) $(1:.o=-b.o) -o $(1:.o=-ab.o)
-	objcopy $(foreach s,$(4),--keep-global-symbol=$(s)) $(1:.o=-ab.o) $(1)
-endef
-$(LOOPBACK_OBJ)/guest.o: guest/gl_stream.c $(GL_STREAM_GEN)
-	$(call loopback_side,$@,guest/gl_stream.c $(GL_STREAM_DIR)/gl_encode.c,guest,nbtgl_attach nbtgl_proc nbtgl_take)
-$(LOOPBACK_OBJ)/runner.o: runner/gl_runner.c $(GL_STREAM_GEN)
-	$(call loopback_side,$@,runner/gl_runner.c $(GL_STREAM_DIR)/gl_decode.c,runner,nbtgl_fn nbtgl_load nbtgl_run)
-# The front end with its gl* calls through nbtgl_app.
-$(LOOPBACK_OBJ)/%.o: frontend/%.cpp $(GL_STREAM_GEN)
-	@mkdir -p $(dir $@)
-	$(CXX) $(INC) $(HOST_CXXFLAGS) -I$(GL_STREAM_DIR) -include gl_redirect.h -MMD -MP -c $< -o $@
-$(LOOPBACK_OBJ)/font8x8.o: frontend/font8x8.c
-	@mkdir -p $(dir $@)
-	$(CC) $(INC) $(HOST_CFLAGS) -c $< -o $@
-$(LOOPBACK_OBJ)/gl_loopback.o: tests/gl_loopback.cpp $(GL_STREAM_GEN)
-	@mkdir -p $(dir $@)
-	$(CXX) $(INC) $(HOST_CXXFLAGS) -I$(GL_STREAM_DIR) -MMD -MP -c $< -o $@
-$(GL_LOOPBACK): $(addprefix $(LOOPBACK_OBJ)/,gl_loopback.o frame_video.o overlay.o font8x8.o guest.o runner.o) \
-		$(HOST_LIBS)
-	$(CXX) $^ $(LDFLAGS) $(HOST_LDLIBS) -o $@
+# The stamps, now that every flag is set.
+$(call nbt_stamp,$(call stamp,host),$(CC) $(INC) $(HOST_CFLAGS) | $(CXX) $(INC) $(HOST_CXXFLAGS),$(CC) $(CXX))
+$(call nbt_stamp,$(call stamp,asan),$(CC) $(INC) $(ASAN_CFLAGS) | $(CXX) $(INC) $(ASAN_CXXFLAGS),$(CC) $(CXX))
+$(call nbt_stamp,$(call stamp,loopback),$(CC) $(LOOPBACK_CFLAGS) | $(CXX) $(INC) $(HOST_CXXFLAGS),$(CC) $(CXX))
+$(call nbt_stamp,$(call stamp,qnx),$(NBT_QNX_CC) $(QNX_CFLAGS) | $(NBT_QNX_CXX) $(QNX_CXXFLAGS),,$(NBT_TOOLCHAIN)/VERSION)
+$(call nbt_stamp,$(call stamp,qnx-sdp),$(if $(QNX_ENV),$(QNX_ENV) $(QCC) $(QNX_SDP_CFLAGS) | $(QNX_SDP_CXXFLAGS) \
+	| $(RUNNER_FLAGS)))
+$(call nbt_stamp,$(call stamp,module),$(NBT_MOD_CC) $(MODULE_CFLAGS) | $(MODULE_CXXFLAGS) | $(MOD_CFLAGS) \
+	| $(MOD_CXXFLAGS) | $(GUEST_CFLAGS),,$(NBT_TOOLCHAIN)/VERSION)

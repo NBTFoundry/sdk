@@ -17,22 +17,22 @@ $(GL_STREAM_GEN) &: tools/gen_gl_stream.py tools/glregistry.py third_party/OpenG
 
 GUEST_CFLAGS := $(MODULE_CFLAGS) -Iguest -I$(GL_STREAM_DIR)
 
-$(GUEST_OBJ)/start.o: guest/start.S
+$(GUEST_OBJ)/start.o: guest/start.S $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(NBT_MOD_ARCH) -c $< -o $@
 
-$(GUEST_OBJ)/%.o: guest/%.c $(GL_STREAM_DIR)/gl_commands.h $(MODULE_LIBC)
+$(GUEST_OBJ)/%.o: guest/%.c $(GL_STREAM_DIR)/gl_commands.h $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(GUEST_CFLAGS) -MMD -MP -c $< -o $@
 
 # The module entry again, with the note saying "guest".
-$(GUEST_OBJ)/crt.o: module/runtime/crt.c $(MODULE_LIBC)
+$(GUEST_OBJ)/crt.o: module/runtime/crt.c $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(MODULE_CFLAGS) -DNBT_MODULE_MODE=2 -MMD -MP -c $< -o $@
 
-$(GUEST_OBJ)/gl_encode.o: $(GL_STREAM_DIR)/gl_encode.c $(MODULE_LIBC)
+$(GUEST_OBJ)/gl_encode.o: $(GL_STREAM_DIR)/gl_encode.c $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
-	$(NBT_MOD_CC) $(GUEST_CFLAGS) -c $< -o $@
+	$(NBT_MOD_CC) $(GUEST_CFLAGS) -MMD -MP -c $< -o $@
 
 .PHONY: guest-runtime guest-probe guest-check
 guest-runtime: $(NBT_GUEST_RT_OBJS)

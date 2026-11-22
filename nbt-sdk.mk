@@ -74,6 +74,9 @@ $(sort $(NBT_SDK_QNX_LIBS) $(NBT_SDK_FRONT_QNX_LIBS)): nbt-sdk-qnx ;
 NBT_MOD_ROOT := $(NBT_SDK_ROOT)
 NBT_MOD_BUILD := $(abspath $(NBT_SDK_BUILD_DIR))
 include $(NBT_SDK_ROOT)/module/flags.mk
+# Build stamps for the application's own objects: $(call nbt_stamp,...)
+# (nbt-stamp.mk).
+include $(NBT_SDK_ROOT)/nbt-stamp.mk
 NBT_SDK_MOD_DEPS = $(NBT_MOD_LINK_DEPS) $(NBT_GUEST_RT_OBJS)
 
 # A test package's executable for today's NBT Manager: nbt-runner with the

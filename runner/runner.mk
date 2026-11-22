@@ -23,7 +23,7 @@ RUNNER_PROBE_OBJS := $(RUNNER_COMMON_OBJS) $(RUNNER_OBJ)/runner_probe.o
 # matching implicit rule, the top Makefile's $(OBJ_DIR)/qnx-sdp/%.o, which
 # lacks RUNNER_FLAGS; a static pattern rule wins in every make.
 RUNNER_CXX_OBJS := $(RUNNER_OBJ)/nbt_runner.o
-$(RUNNER_CXX_OBJS): $(RUNNER_OBJ)/%.o: runner/%.cpp $(GL_STREAM_GEN) | qnx-env
+$(RUNNER_CXX_OBJS): $(RUNNER_OBJ)/%.o: runner/%.cpp $(GL_STREAM_GEN) $(call stamp,qnx-sdp) | qnx-env
 	@mkdir -p $(dir $@)
 	. "$(QNX_ENV)" && $(QCC) $(QNX_SDP_CXXFLAGS) $(RUNNER_FLAGS) $(QNX_SDP_DEPFLAGS) -c $< -o $@
 
@@ -31,7 +31,7 @@ $(RUNNER_CXX_OBJS): $(RUNNER_OBJ)/%.o: runner/%.cpp $(GL_STREAM_GEN) | qnx-env
 RUNNER_C_OBJS := $(addprefix $(RUNNER_OBJ)/,host_sys.o module_loader.o guest_server.o gl_runner.o \
 	fake_gl.o runner_probe.o)
 define runner_c
-$(1): $(RUNNER_OBJ)/%.o: $(2)/%.c $(GL_STREAM_GEN) | qnx-env
+$(1): $(RUNNER_OBJ)/%.o: $(2)/%.c $(GL_STREAM_GEN) $(call stamp,qnx-sdp) | qnx-env
 	@mkdir -p $$(dir $$@)
 	. "$$(QNX_ENV)" && $$(QCC) $$(QNX_SDP_CFLAGS) $$(RUNNER_FLAGS) $$(QNX_SDP_DEPFLAGS) -c $$< -o $$@
 endef

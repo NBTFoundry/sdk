@@ -42,6 +42,16 @@ Rules:
   `-std=c++11 -O2 -Wall -Wextra -Werror -fno-exceptions -fno-rtti`.
 - Objects per kind in `$(OBJ_DIR)/{host,asan,qnx}/`, built with `-MMD -MP`;
   `-include` the `.d` files at the end.
+- Every object rule lists its kind's build stamp (`nbt-stamp.mk`, from
+  `nbt-sdk.mk`): `stamp = $(OBJ_DIR)/$(1).stamp`, `$(OBJ_DIR)/host/%.o:
+  %.cpp $(call stamp,host)`, and at the end of the Makefile one
+  `$(call nbt_stamp,$(call stamp,<kind>),<compiler and every flag of the
+  kind>,<host compilers>,<$(NBT_TOOLCHAIN)/VERSION for the NBT toolchain>)`
+  per kind. Objects then rebuild when the compiler, the toolchain or the
+  flags change, and only then. A core built by upstream's own make in a copy
+  gets a `core-<kind>` stamp; its build deletes the copy's objects when that
+  stamp is not the one the objects were built with, and keeps our command
+  line's `CFLAGS`/`CXXFLAGS` out of upstream's `MAKEFLAGS` (nf-pcsx-rearmed).
 - Applications are built without the QNX SDP. Prefer a module or a guest
   (port-module). A program that must stay a native QNX executable uses the
   NBT toolchain's QNX target (`sdk/docs/native-apps.md`, "Ordinary QNX
@@ -61,4 +71,5 @@ Rules:
   opens a window. Build errors: port-qnx-fixes.
 
 Check: `make -j"$(nproc)" host`, then `make qnx qnx-check` (after
-`make -C ../sdk toolchain` once).
+`make -C ../sdk toolchain` once); a second `make` builds nothing, and
+`make CXXFLAGS=-DX host` rebuilds the host objects only.

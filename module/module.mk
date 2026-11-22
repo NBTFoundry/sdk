@@ -29,7 +29,7 @@ toolchain:
 # depend on the file system's directory order)
 MODULE_RT_OBJS := $(patsubst module/runtime/%.c,$(MODULE_OBJ)/rt/%.o,$(sort $(wildcard module/runtime/*.c)))
 
-$(MODULE_OBJ)/rt/%.o: module/runtime/%.c $(MODULE_LIBC)
+$(MODULE_OBJ)/rt/%.o: module/runtime/%.c $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(MODULE_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -54,11 +54,11 @@ MOD_PLATFORM_SRC := src/lifecycle.cpp src/video_qnx.cpp src/video_egl.cpp src/au
 MOD_SDK_SRC := $(filter-out $(MOD_PLATFORM_SRC),$(SDK_SRC)) $(sort $(wildcard module/sdk/*.cpp))
 MOD_GL_C := $(BUILD_DIR)/module-gl/gl_table.c
 
-$(MOD_OBJ)/%.o: %.cpp $(MODULE_RUNTIME_LIBS)
+$(MOD_OBJ)/%.o: %.cpp $(MODULE_RUNTIME_LIBS) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CXX) $(MOD_CXXFLAGS) -MMD -MP -c $< -o $@
 
-$(MOD_OBJ)/%.o: %.c $(MODULE_LIBC)
+$(MOD_OBJ)/%.o: %.c $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(MOD_CFLAGS) -MMD -MP -c $< -o $@
 
@@ -66,9 +66,9 @@ $(MOD_GL_C): tools/gen_gl_table.py tools/glregistry.py third_party/OpenGL-Regist
 	@mkdir -p $(dir $@)
 	$(PYTHON) tools/gen_gl_table.py third_party/OpenGL-Registry/xml/gl.xml $@
 
-$(MOD_OBJ)/gl_table.o: $(MOD_GL_C) $(MODULE_LIBC)
+$(MOD_OBJ)/gl_table.o: $(MOD_GL_C) $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
-	$(NBT_MOD_CC) $(MOD_CFLAGS) -Imodule/runtime -c $< -o $@
+	$(NBT_MOD_CC) $(MOD_CFLAGS) -Imodule/runtime -MMD -MP -c $< -o $@
 
 # mod_lib(name, objects)
 define mod_lib
@@ -88,15 +88,15 @@ $(eval $(call mod_lib,module-gl,$(MOD_OBJ)/gl_table.o))
 libs-mod: $(NBT_MOD_SDK_LIBS) $(MODULE_RT)
 
 # --- Test payloads, each as a module and as a guest ---
-$(MODULE_OBJ)/tests/%.o: tests/module/%.c $(MODULE_LIBC)
+$(MODULE_OBJ)/tests/%.o: tests/module/%.c $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(MODULE_CFLAGS) -Itests/module -Icommon -MMD -MP -c $< -o $@
 
-$(MODULE_OBJ)/tests/%.o: tests/module/%.cpp $(MODULE_RUNTIME_LIBS)
+$(MODULE_OBJ)/tests/%.o: tests/module/%.cpp $(MODULE_RUNTIME_LIBS) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CXX) $(MODULE_CXXFLAGS) -Itests/module -Icommon -MMD -MP -c $< -o $@
 
-$(MODULE_OBJ)/common/%.o: common/%.c $(MODULE_LIBC)
+$(MODULE_OBJ)/common/%.o: common/%.c $(MODULE_LIBC) $(call stamp,module)
 	@mkdir -p $(dir $@)
 	$(NBT_MOD_CC) $(MODULE_CFLAGS) -MMD -MP -c $< -o $@
 

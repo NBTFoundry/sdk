@@ -15,7 +15,7 @@ people can follow them too. Start with
 
 | Shape | When | SDK parts | Example |
 | --- | --- | --- | --- |
-| Libretro core | upstream has a libretro core | `libnbt-retro` (game list, saves, states, menu, controls) | [nf-snes9x](https://github.com/NBTFoundry/nf-snes9x) (module), [nf-fbneo](https://github.com/NBTFoundry/nf-fbneo) and [nf-pcsx-rearmed](https://github.com/NBTFoundry/nf-pcsx-rearmed) (guests) |
+| Libretro core | upstream has a libretro core | `libnbt-retro` (game list, saves, states, menu, controls) | [nf-snes9x](https://github.com/NBTFoundry/nf-snes9x) and [nf-picodrive](https://github.com/NBTFoundry/nf-picodrive) (modules), [nf-fbneo](https://github.com/NBTFoundry/nf-fbneo) and [nf-pcsx-rearmed](https://github.com/NBTFoundry/nf-pcsx-rearmed) (guests) |
 | Platform layer | upstream has its own platform layer (SDL, GLUT, `i_*`/`sys_*` files) | `libnbt-sdk`, `libnbt-gles2`, `libnbt-frontend` as needed | [nf-doom](https://github.com/NBTFoundry/nf-doom) (guest) |
 | Companion | the program must stay its own process (sockets, other processes, its own protocol) | `nbt/app/child.hpp`, an appended payload | [nf-android-auto](https://github.com/NBTFoundry/nf-android-auto) (native, the toolchain's QNX target) |
 

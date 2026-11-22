@@ -32,8 +32,8 @@ Part of [NBTFoundry](https://github.com/NBTFoundry):
 [mobile-app](https://github.com/NBTFoundry/mobile-app) (phone app) ·
 [installer](https://github.com/NBTFoundry/installer) (desktop installer)
 
-Not affiliated with or endorsed by BMW AG. BMW, iDrive and NBT are trademarks
-of BMW AG.
+Not affiliated with or endorsed by BMW AG or BlackBerry Limited. BMW, iDrive and
+NBT are trademarks of BMW AG; QNX is a trademark of BlackBerry Limited.
 
 ## Contents
 

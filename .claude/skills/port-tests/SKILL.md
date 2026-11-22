@@ -35,7 +35,7 @@ Also:
 - `make check-static-init`.
 - `make test-upstream`: upstream's own host tests at the pin, when it has some.
 - **QNX 6.5 SP1 VM** (`make vm-test`, local only):
-  `$(NBT_SDK_ROOT)/tools/qnx65-vm/run.sh -c "<command>" ... -x "<regex>" ... <files>`
+  `$(NBT_SDK_VM_RUN) -c "<command>" ... -x "<regex>" ... <files>`
   boots QNX under QEMU, runs the commands, and fails unless every `-x`
   pattern shows in the log. Run the health check and a user start with
   `NBT_DATA_DIR=/dev/shmem`. No GPU, sound or network; files go into

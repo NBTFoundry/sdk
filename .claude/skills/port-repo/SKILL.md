@@ -19,7 +19,9 @@ Needs the answers from port-survey. Ask before creating anything on GitHub.
 3. **Skeleton.** Copy from the closest example and rename (nf-snes9x:
    libretro; nf-android-auto: companion; https://github.com/NBTFoundry/nf-doom: platform layer):
    - `LICENSE` (ours), `LICENSES/<SPDX-id>.txt` for each licence in the package;
-   - `DISCLAIMER.md`, verbatim from the SDK;
+   - `DISCLAIMER.md`, verbatim from the SDK, except its last paragraph: only
+     the trademark owners the repository names (no BlackBerry/QNX sentence in
+     a module or guest repository, port-build);
    - `README.md`: logo block, the warning banner, tagline, supported head
      units, "Part of NBTFoundry" links, trademarks line; then Status, Build,
      Layout, License (later steps add the rest);

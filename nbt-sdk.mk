@@ -84,6 +84,13 @@ NBT_SDK_MOD_DEPS = $(NBT_MOD_LINK_DEPS) $(NBT_GUEST_RT_OBJS)
 #   $(NBT_SDK_BUNDLE) app.so app-bundle
 NBT_SDK_RUNNER = $(NBT_SDK_BUILD_DIR)/nbt-runner
 NBT_SDK_BUNDLE = $(NBT_PYTHON) $(NBT_SDK_ROOT)/tools/nbt_bundle.py $(NBT_SDK_RUNNER)
+# An application's VM test: QNX 6.5 SP1 under QEMU (docs/native-apps.md,
+# "Testing without a head unit") with nbt-runner and the payload in its boot
+# image. QNX_ENV and QNX_SCREEN_LIBDIR come from the command line or the
+# environment; the application's Makefile need not name them.
+#   vm-test: $(NBT_SDK_RUNNER) app.so
+#   	$(NBT_SDK_VM_RUN) -c "nbt-runner --nbt-payload /proc/boot/app.so" -x 'expected' $^
+NBT_SDK_VM_RUN = $(NBT_SDK_ROOT)/tools/qnx65-vm/run.sh
 # Any payload appended to an application's executable, for a companion program
 # the application starts itself (nbt/app/child.hpp):
 #   $(NBT_SDK_APPEND) app companion app-with-companion

@@ -37,15 +37,18 @@ nf-pcsx-rearmed.
    it for a payload with the note. `release/package.args` declares
    `--bridge 1.7` and `runner` in `--bridge-uses` (never optional;
    port-package), and `make package` takes `build/nbt-<name>.so` or `.guest`.
-   The CI release passes `qnx: false` to the manager's `app-release.yml`
-   with `build: make -j"$(nproc)" module` (or `guest`) and that payload
+   The CI release calls the manager's `app-release.yml` with
+   `build: make -j"$(nproc)" module` (or `guest`) and that payload
    (port-release): no QNX SDP, no private image. Only for a manager before
    bridge 1.7, a bundle: `<name>-bundle: <payload> $(NBT_SDK_RUNNER)` running
    `$(NBT_SDK_BUNDLE) <payload> $@` (the runner needs `QNX_ENV` and
    `QNX_SCREEN_LIBDIR`), packaged as an ordinary executable (no `runner`).
 5. **VM run** (no GPU, no sound: fake both), from the SDK after
    `make nbt-runner QNX_ENV=… QNX_SCREEN_LIBDIR=…`; payload file names must end
-   in `.so`, `.guest` or `-bundle` (copied byte for byte):
+   in `.so`, `.guest` or `-bundle` (copied byte for byte). The application's
+   `vm-test` runs the same through `$(NBT_SDK_VM_RUN)` (`nbt-sdk.mk`), with
+   `$(NBT_SDK_RUNNER)` as a prerequisite, and names no QNX variable or path
+   (port-build):
    ```sh
    tools/qnx65-vm/run.sh \
      -c "NBT_LAUNCH=check NBT_DATA_DIR=/dev/shmem nbt-runner --nbt-payload /proc/boot/<payload> &" \

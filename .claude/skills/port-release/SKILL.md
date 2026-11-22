@@ -20,11 +20,13 @@ Reference: nf-android-auto `.github/workflows/`, manager
    reads `release/sdk.ref`, then
    `uses: NBTFoundry/manager/.github/workflows/app-release.yml@<manager commit>`
    (the latest manager release's commit) with `secrets: inherit`,
-   `qnx: false`, `build: make -j"$(nproc)" guest` (or `module`, or
+   `build: make -j"$(nproc)" guest` (or `module`, or
    `qnx qnx-check` for a native program) and `payload: build/nbt-<name>.guest`
    (or `.so`, or `-qnx`): the job installs the SDK's toolchain and needs no
-   build image (skip steps 5-6). A build that embeds Git LFS files adds
-   `lfs: true` (https://github.com/NBTFoundry/nf-doom).
+   build image (skip steps 5-6). A manager commit up to v0.3.1 defaults
+   `qnx` to true: with such a pin, also pass `qnx: false`, and drop it when
+   the pin moves past it. A build that embeds Git LFS files adds `lfs: true`
+   (https://github.com/NBTFoundry/nf-doom).
 3. **GitHub settings**, same as the other nf-* repositories (`R=NBTFoundry/nf-<name>`):
    ```sh
    gh api -X PUT repos/$R/environments/release --input - <<'EOF'

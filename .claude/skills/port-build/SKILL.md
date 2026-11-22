@@ -53,7 +53,12 @@ Rules:
   stamp is not the one the objects were built with, and keeps our command
   line's `CFLAGS`/`CXXFLAGS` out of upstream's `MAKEFLAGS` (nf-pcsx-rearmed).
 - Applications are built without the QNX SDP. Prefer a module or a guest
-  (port-module). A program that must stay a native QNX executable uses the
+  (port-module). A module or guest repository never names QNX (Makefile,
+  README, workflow comments, package.args, sources): it is built with the NBT
+  toolchain and run by the manager's `nbt-runner`. Its Makefile declares no
+  `QNX_ENV` or `QNX_SCREEN_LIBDIR` (they reach the SDK's runner build from the
+  command line) and runs its VM test with `$(NBT_SDK_VM_RUN)`; the toolchain
+  does not define `__QNXNTO__` for modules and guests. A program that must stay a native QNX executable uses the
   NBT toolchain's QNX target (`sdk/docs/native-apps.md`, "Ordinary QNX
   programs without the SDP"):
   - compile: `$(NBT_QNX_CXX) $(NBT_QNX_CXXFLAGS) $(NBT_QNX_SDK_INC) -O2

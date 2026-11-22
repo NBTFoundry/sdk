@@ -32,7 +32,10 @@ Noncommercial with a Required Notice).
 6. `legal/README.md`: each component, its licence and where its text is.
 7. **README License section:** copyright line, our licence, upstream's
    terms, artwork MPL-2.0, trademarks ("Not affiliated with or endorsed by
-   BMW AG ..."; and upstream's owners where a name is a trademark).
+   BMW AG ..."; and upstream's owners where a name is a trademark). A
+   repository that names QNX (a native QNX program, not a module or guest:
+   port-build) adds BlackBerry Limited to the line, to `DISCLAIMER.md` and to
+   the notice: "QNX is a trademark of BlackBerry Limited".
 8. **Data and assets** (games, firmware, fonts): ship only what the licence
    allows; otherwise the user supplies it through `files`.
 9. If upstream's README limits who may bundle it, tell the user before any

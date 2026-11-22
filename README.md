@@ -137,12 +137,26 @@ CXXFLAGS += $(NBT_SDK_INC)
 build/app-host: $(APP_OBJS) $(NBT_SDK_HOST_LIBS)
 	$(CXX) $(APP_OBJS) $(NBT_SDK_HOST_LIBS) $(NBT_SDK_HOST_LDLIBS) -o $@
 
-build/app-qnx: $(APP_QNX_OBJS) $(NBT_SDK_QNX_LIBS)
-	$(QCC) -Vgcc_ntoarmv7le_gpp -lang-c++ $(APP_QNX_OBJS) $(NBT_SDK_QNX_LIBS) \
-		$(NBT_SDK_QNX_LDFLAGS) -L$(QNX_SCREEN_LIBDIR) $(NBT_SDK_QNX_LDLIBS) -o $@
+# The head unit: objects compiled with $(NBT_MOD_CXX) $(NBT_MOD_CXXFLAGS),
+# linked as a module (nbt_module_link) or, for GPL or LGPL code, a guest.
+build/nbt-app.guest: $(APP_MOD_OBJS) $(NBT_SDK_MOD_DEPS)
+	$(call nbt_guest_link,$@,$(APP_MOD_OBJS),MPL-2.0)
 ```
 
-[`tests/smoke_app.cpp`](tests/smoke_app.cpp) is a complete small application.
+[`tests/smoke_app.cpp`](tests/smoke_app.cpp) is a complete small application;
+the applications built on the SDK are listed in [docs/porting.md](docs/porting.md).
+
+## Releases
+
+The SDK is source: each application builds it in its own build folder. A
+release is an annotated tag `vX.Y.Z` on `main` with notes on GitHub and no
+files: what changed for applications, the bridge version and module ABI it
+serves, and the NBT toolchain release it pins (`module/flags.mk`,
+`module/toolchain.sha256`). Applications pin the tagged commit in their
+`release/sdk.ref` (the full commit, so builds stay exact) and name the version
+in their README. A release is made when applications need a change; tags are
+never moved or deleted. While the version is 0.x, a minor release may change
+the API.
 
 ## Rules the code follows
 

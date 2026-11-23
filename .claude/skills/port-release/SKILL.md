@@ -70,3 +70,6 @@ Reference: nf-android-auto `.github/workflows/`, manager
 7. **Release** only when the user asks: tag `vX.Y.Z` on `main`, push it; the
    user approves the sign job under the run's "Review deployments"; the
    release gets `<id>-X.Y.Z.nbt`. Tags are never moved or deleted.
+8. **The catalog:** add the app to `apps.json` in `NBTFoundry/NBTFoundry.github.io`
+   (fields: its README), commit and push. The landing page and the phone
+   app's Get apps list it at its first release (a `0.x` tag is a beta).

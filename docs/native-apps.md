@@ -44,7 +44,7 @@ The payload itself is the package's executable: NBT Manager releases carry `nbt-
 runner,controller
 ```
 
-`runner` is always in `--bridge-uses`, never optional: a manager without the runner refuses the package instead of failing at its first start. The manager's `tools/package.py` requires the declaration exactly when the payload has the note. A signed release of such an application builds on a plain runner with this toolchain only (the manager's `app-release.yml` with `qnx: false`): nothing from the QNX SDP, no private build image.
+`runner` is always in `--bridge-uses`, never optional: a manager without the runner refuses the package instead of failing at its first start. The manager's `tools/package.py` requires the declaration exactly when the payload has the note. A signed release of such an application builds on a plain runner with this toolchain only (the manager's `app-release.yml` by default): nothing from the QNX SDP, no private build image.
 
 For a manager before bridge 1.7, `$(NBT_SDK_BUNDLE) app.so app-bundle` appends the payload to a copy of `nbt-runner`, giving one ordinary executable (it needs the SDP to build the runner).
 
@@ -94,7 +94,7 @@ app-qnx: $(QNX_OBJS) $(NBT_SDK_QNX_LIBS)
 ```
 
 Such an application declares no `runner` capability; its signed release
-builds with `qnx: false` like a module's. `make qnx-check` checks that its
+builds on a plain runner like a module's. `make qnx-check` checks that its
 imports exist on the car (QNX 6.5.0 SP1). Worked example: nf-android-auto
 (its adapter and NBT-AAD's daemon).
 

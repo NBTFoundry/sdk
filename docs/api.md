@@ -230,7 +230,10 @@ tester (declared `--bridge 1.8 --bridge-optional diag --bridge-diag
 
 - `nbt::app::Diag`, `init()`, then `read(ecu, did, ...)` (22),
   `codes(ecu, mask, ...)` (19 02), `clear(ecu)` (14, only parked), or
-  `request(ecu, uds, ...)` for any request the policy allows.
+  `request(ecu, uds, ...)` for any request the policy allows: with bridge
+  1.9, `control` writes (2E), input/output control (2F) and routines (31),
+  only parked unless the rule adds `drive`. The driver sees each class as a
+  permission before the app installs (the manager's `docs/permissions.md`).
 - Each call blocks until the answer: call it off the drawing thread. A
   negative answer is `kOk` with its code in `nrc`; `kRefused`, `kNoRoute`,
   `kNotParked`, `kBusy` say why nothing was asked.

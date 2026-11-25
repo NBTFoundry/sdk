@@ -220,6 +220,19 @@ declared optional in its package (`tools/package.py --bridge 1.6
 The wire formats are the manager's (`nbt/bridge_hold.h`, READERS); the
 manager's `docs/app-bridge.md`, components 5-7, describes the rest.
 
+## Diagnostics — `nbt/app/diag.hpp`, bridge 1.8
+
+UDS requests to the car's control units, sent by NBT Manager as the car's one
+tester (declared `--bridge 1.8 --bridge-optional diag --bridge-diag
+12:read+codes+clear`; the manager's `docs/diag-bridge.md`):
+
+- `nbt::app::Diag`, `init()`, then `read(ecu, did, ...)` (22),
+  `codes(ecu, mask, ...)` (19 02), `clear(ecu)` (14, only parked), or
+  `request(ecu, uds, ...)` for any request the policy allows.
+- Each call blocks until the answer: call it off the drawing thread. A
+  negative answer is `kOk` with its code in `nrc`; `kRefused`, `kNoRoute`,
+  `kNotParked`, `kBusy` say why nothing was asked.
+
 ## Other programs — `nbt/app/child.hpp`, `nbt/app/payload.h`
 
 An application may start the head unit's tools, or a companion program it

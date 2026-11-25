@@ -22,6 +22,8 @@
 #include "nbt/app/child.hpp"
 #include "nbt/app/input_mixer.hpp"
 #include "nbt/app/car_data.hpp"
+#include "nbt/app/diag.hpp"
+#include "nbt/diag_wire.h"
 #include "nbt/app/lifecycle.hpp"
 #include "nbt/app/log.hpp"
 #include "nbt/app/parse.hpp"
@@ -960,6 +962,51 @@ void test_host_keys() {
 }  // namespace
 
 /* Bridge 1.6: the hold request and answer, the network rules, car data. */
+// Capability diag (bridge 1.8): requests out, answers matched by id, the
+// helpers unwrap positive and negative answers.
+void test_diag() {
+  using nbt::app::Diag;
+  int pair[2];
+  CHECK(socketpair(AF_UNIX, SOCK_DGRAM, 0, pair) == 0);
+  CHECK(dup2(pair[0], 10) == 10);
+  setenv("NBT_DIAG_FD", "10", 1);
+  Diag diag;
+  CHECK(diag.init() && diag.available());
+  // A stale answer (another id) is skipped; id 1 answers the first request.
+  uint8_t wire[64];
+  const uint8_t stale[] = {0x62, 0x00, 0x00};
+  int n = nbt_diag_reply_encode(0x12, 99, NBT_DIAG_OK, NBT_DIAG_VIA_HSFZ, stale, 3, wire, 64);
+  CHECK(send(pair[1], wire, static_cast<size_t>(n), 0) == n);
+  const uint8_t value[] = {0x62, 0xf4, 0x0c, 0x1a, 0xf8};
+  n = nbt_diag_reply_encode(0x12, 1, NBT_DIAG_OK, NBT_DIAG_VIA_HSFZ, value, 5, wire, 64);
+  CHECK(send(pair[1], wire, static_cast<size_t>(n), 0) == n);
+  uint8_t out[16], nrc = 0;
+  size_t size = 0;
+  CHECK(diag.read(0x12, 0xf40c, out, sizeof(out), &size, &nrc) == Diag::kOk);
+  CHECK(size == 2 && out[0] == 0x1a && out[1] == 0xf8 && nrc == 0);
+  ssize_t got = recv(pair[1], wire, sizeof(wire), MSG_DONTWAIT);
+  nbt_diag_request request;
+  CHECK(got == 9 && !nbt_diag_request_decode(wire, static_cast<size_t>(got), &request));
+  CHECK(request.ecu == 0x12 && request.id == 1 && request.size == 3 && request.uds[0] == 0x22);
+  // A negative answer: kOk with its code.
+  const uint8_t negative[] = {0x7f, 0x14, 0x22};
+  n = nbt_diag_reply_encode(0x12, 2, NBT_DIAG_OK, NBT_DIAG_VIA_HSFZ, negative, 3, wire, 64);
+  CHECK(send(pair[1], wire, static_cast<size_t>(n), 0) == n);
+  CHECK(diag.clear(0x12, &nrc) == Diag::kOk && nrc == 0x22);
+  CHECK(recv(pair[1], wire, sizeof(wire), MSG_DONTWAIT) == 10);
+  // A refusal comes back as such.
+  n = nbt_diag_reply_encode(0x40, 3, NBT_DIAG_REFUSED, NBT_DIAG_VIA_NONE, NULL, 0, wire, 64);
+  CHECK(send(pair[1], wire, static_cast<size_t>(n), 0) == n);
+  CHECK(diag.codes(0x40, 0xff, out, sizeof(out), &size) == Diag::kRefused && size == 0);
+  close(10);
+  close(pair[0]);
+  close(pair[1]);
+  unsetenv("NBT_DIAG_FD");
+  Diag none;
+  CHECK(!none.init() && none.request(0x12, value, 3, out, 16, &size) == Diag::kNoChannel);
+  ++g_tests_run;
+}
+
 void test_bridge_16() {
   char dir[64], hold_path[128], state_path[128], value_path[160], fd_text[16];
   make_temp_dir(dir, sizeof(dir), "bridge16");
@@ -1028,6 +1075,7 @@ int main() {
   test_settings();
   test_lifecycle();
   test_bridge_16();
+  test_diag();
   test_audio_mixer();
   test_audio_a2i();
   test_log();

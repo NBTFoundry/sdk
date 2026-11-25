@@ -19,7 +19,9 @@ AudioPcm::AudioPcm()
       thread_running_(false),
       stop_requested_(false),
       thread_(),
-      a2i_(NULL) {}
+      a2i_(NULL),
+      mix_fd_(-1),
+      mix_route_(false) {}
 
 AudioPcm::~AudioPcm() {
   close();

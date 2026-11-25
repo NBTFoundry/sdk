@@ -2,6 +2,7 @@
 // nbt-runner: runs an NBT application built without the QNX SDP.
 //
 //   nbt-runner [--ready-fd N --lease-fd N] [--nbt-payload PATH] [arguments...]
+//   nbt-runner --mixer <address>   NBT Manager's audio mixer (nbt/app/audio_mix.hpp)
 //
 // The runner is an ordinary NBT Manager application (nbt/app/lifecycle.hpp):
 // it takes the bridge, then loads the payload and gives it the host ABI
@@ -16,6 +17,7 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +29,7 @@
 #include "fake_gl.h"
 #include "host_sys.h"
 #include "membench.h"
+#include "nbt/app/audio_mix.hpp"
 #include "nbt/app/audio_pcm.hpp"
 #include "nbt/app/child.hpp"
 #include "nbt/app/lifecycle.hpp"
@@ -210,6 +213,13 @@ void bench_native() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // Started by an application's host, it plays every application's sound and
+  // ends 30 s after the last one left (NBT Manager's docs/audio-mixer.md).
+  if (argc == 3 && strcmp(argv[1], "--mixer") == 0) {
+    nbt::app::log_init("mixer");
+    signal(SIGPIPE, SIG_IGN);
+    return nbt::app::mix_serve(argv[2], 30000);
+  }
   nbt::app::log_init("nbt-runner");
   nbt::app::log_install_crash_handlers();
   static Lifecycle lc;

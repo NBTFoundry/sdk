@@ -25,6 +25,9 @@ typedef void (*AudioRenderFn)(void* context, int16_t* out_lr, int frames);
 /* Stereo S16LE output: libasound loaded at run time (io-audio's libasound on
  * the head unit, ALSA on a Linux host), a playback thread pulling from a
  * render callback, and the head unit's audio connection (AudioRoute).
+ * NBT_AUDIO_MIXER=<address> plays through NBT Manager's mixer instead, at its
+ * rate, with every other application at once (nbt/app/audio_mix.hpp); the
+ * device when the mixer does not answer.
  * NBT_AUDIO_A2I=<io-amp input> plays straight into that input through A2I
  * instead (A2iOutput, 44100 Hz), for a connection whose source is not the
  * browser's libasound input. NBT_NO_AUDIO=1 skips the device. One open
@@ -40,7 +43,7 @@ class AudioPcm {
   void close();
 
   bool active() const {
-    return (pcm_handle_ != NULL || (a2i_ && a2i_->is_open())) && thread_running_;
+    return (pcm_handle_ != NULL || (a2i_ && a2i_->is_open()) || mix_fd_ >= 0) && thread_running_;
   }
   /* The device's rate once open (else the requested rate). */
   int sample_rate() const { return sample_rate_; }
@@ -56,6 +59,8 @@ class AudioPcm {
   static void* thread_entry(void* arg);
   void playback_loop();
   void a2i_loop(int16_t* buf, int frames);
+  void mix_loop(int16_t* buf, int frames);
+  bool open_mixer();
   bool open_device();
   void close_device();
 
@@ -71,6 +76,8 @@ class AudioPcm {
   pthread_t thread_;
   AudioRoute route_;
   A2iOutput* a2i_; /* NBT_AUDIO_A2I only; never in a module */
+  int mix_fd_;     /* NBT_AUDIO_MIXER: the mixer's socket */
+  volatile bool mix_route_;
 };
 
 }  // namespace app

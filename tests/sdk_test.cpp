@@ -15,6 +15,8 @@
 #include <unistd.h>
 
 #include "nbt/app/audio_a2i.hpp"
+#include "nbt/app/audio_mix.hpp"
+#include "nbt/app/audio_pcm.hpp"
 #include "nbt/app/audio_mixer.hpp"
 #include "nbt/app/audio_route.hpp"
 #include "nbt/app/back_gesture.hpp"
@@ -1082,7 +1084,66 @@ void test_bridge_16() {
   unsetenv("NBT_LAUNCH");
 }
 
+/* NBT Manager's audio mixer: an AudioPcm (NBT_AUDIO_MIXER) and a raw client
+ * play at once; the mix is their sum. */
+static void constant_render(void* context, int16_t* out, int frames) {
+  const int16_t value = *static_cast<const int16_t*>(context);
+  for (int i = 0; i < 2 * frames; ++i) out[i] = value;
+}
+
+static void test_audio_mix() {
+  char capture[] = "/tmp/nbt-mix-XXXXXX";
+  const int capture_fd = mkstemp(capture);
+  CHECK(capture_fd >= 0);
+  close(capture_fd);
+  char address[32];
+  snprintf(address, sizeof(address), "127.0.0.1:%d", 40000 + getpid() % 5000);
+  const pid_t mixer = fork();
+  CHECK(mixer >= 0);
+  if (mixer == 0) {
+    setenv("NBT_MIX_CAPTURE", capture, 1);
+    _exit(nbt::app::mix_serve(address, 800));
+  }
+  int rate = 0, fd = -1;
+  for (int i = 0; i < 100 && fd < 0; ++i) {  // until it listens
+    fd = nbt::app::mix_connect(address, &rate);
+    if (fd < 0) usleep(20000);
+  }
+  CHECK(fd >= 0 && rate == nbt::app::kMixRate);
+  CHECK(nbt::app::mix_connect("127.0.0.1", &rate) < 0); /* no port */
+  setenv("NBT_AUDIO_MIXER", address, 1);
+  int16_t level = 500;
+  {
+    nbt::app::AudioPcm pcm;
+    CHECK(pcm.open(22050, constant_render, &level, true) && pcm.sample_rate() == rate);
+    int16_t frames[2 * 441];
+    for (int i = 0; i < 2 * 441; ++i) frames[i] = 1500;
+    const uint8_t route = 1;
+    CHECK(nbt::app::mix_send(fd, 'R', &route, 1));
+    for (int i = 0; i < 20; ++i) CHECK(nbt::app::mix_send(fd, 'P', frames, sizeof(frames)));
+    usleep(300000);
+    pcm.close();
+  }
+  unsetenv("NBT_AUDIO_MIXER");
+  close(fd);
+  int status = -1;
+  CHECK(waitpid(mixer, &status, 0) == mixer && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  FILE* in = fopen(capture, "rb");
+  CHECK(in != NULL);
+  int16_t sample[2];
+  bool both = false, too_loud = false;
+  while (fread(sample, 4, 1, in) == 1) {
+    both = both || (sample[0] == 2000 && sample[1] == 2000);
+    too_loud = too_loud || sample[0] > 2000 || sample[1] > 2000;
+  }
+  fclose(in);
+  unlink(capture);
+  CHECK(both && !too_loud);
+  g_tests_run++;
+}
+
 int main() {
+  test_audio_mix();
   test_gles2_matrix_and_batch();
   test_readers();
   test_input_mixer();

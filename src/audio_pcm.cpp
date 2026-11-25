@@ -11,6 +11,7 @@
 #include <sys/asoundlib.h>
 #endif
 
+#include "nbt/app/audio_mix.hpp"
 #include "nbt/app/log.hpp"
 
 namespace nbt {
@@ -86,8 +87,11 @@ bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, boo
   stop_requested_ = false;
   g_pcm_open = true;
   owner_ = true;
+  mix_route_ = route_wanted;
   const char* a2i = getenv("NBT_AUDIO_A2I");
-  if (a2i && a2i[0]) {
+  if (open_mixer()) {
+    // The mixer owns the device and the audio connection.
+  } else if (a2i && a2i[0]) {
     sample_rate_ = kA2iRate;
     frag_frames_ = kA2iBufferBytes / 4;
     a2i_ = new (std::nothrow) A2iOutput;
@@ -104,7 +108,7 @@ bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, boo
     return false;
   }
   thread_running_ = true;
-  if (route_.configure()) {
+  if (mix_fd_ < 0 && route_.configure()) {
     route_.start();
     route_.set_wanted(route_wanted);
   }
@@ -122,7 +126,27 @@ void AudioPcm::close() {
 }
 
 void AudioPcm::set_route_wanted(bool wanted) {
-  if (active()) route_.set_wanted(wanted);
+  if (!active()) return;
+  if (mix_fd_ >= 0) {
+    mix_route_ = wanted;  // the playback thread tells the mixer
+  } else {
+    route_.set_wanted(wanted);
+  }
+}
+
+bool AudioPcm::open_mixer() {
+  const char* mixer = getenv("NBT_AUDIO_MIXER");
+  int rate = 0;
+  if (!mixer || !mixer[0]) return false;
+  mix_fd_ = mix_connect(mixer, &rate);
+  if (mix_fd_ < 0) {
+    log_info("audio: mixer %s did not answer; the device instead", mixer);
+    return false;
+  }
+  sample_rate_ = rate;
+  frag_frames_ = rate / 100 * 2;  // 20 ms per record, within kMixRecordMax
+  log_info("audio: through the mixer at %d Hz", rate);
+  return true;
 }
 
 bool AudioPcm::open_device() {
@@ -262,6 +286,10 @@ bool AudioPcm::open_device() {
 void AudioPcm::close_device() {
   delete a2i_;
   a2i_ = NULL;
+  if (mix_fd_ >= 0) {
+    ::close(mix_fd_);
+    mix_fd_ = -1;
+  }
   if (pcm_handle_) {
 #ifdef __QNXNTO__
     snd_pcm_t* pcm = static_cast<snd_pcm_t*>(pcm_handle_);
@@ -297,6 +325,11 @@ void AudioPcm::playback_loop() {
   if (!buf) return;
   if (a2i_ && a2i_->is_open()) {
     a2i_loop(buf, frames);
+    free(buf);
+    return;
+  }
+  if (mix_fd_ >= 0) {
+    mix_loop(buf, frames);
     free(buf);
     return;
   }
@@ -363,6 +396,25 @@ void AudioPcm::playback_loop() {
 #endif
   }
   free(buf);
+}
+
+// Records to the mixer; its flow control paces the render.
+void AudioPcm::mix_loop(int16_t* buf, int frames) {
+  bool told = false, route = false;
+  while (!stop_requested_) {
+    const bool wanted = mix_route_;
+    if (!told || wanted != route) {
+      const uint8_t value = wanted ? 1 : 0;
+      if (!mix_send(mix_fd_, 'R', &value, 1)) break;
+      told = true;
+      route = wanted;
+    }
+    render_(render_context_, buf, frames);
+    if (!mix_send(mix_fd_, 'P', buf, static_cast<uint16_t>(frames * 4))) {
+      if (!stop_requested_) log_info("audio: the mixer is gone");
+      break;
+    }
+  }
 }
 
 void AudioPcm::a2i_loop(int16_t* buf, int frames) {

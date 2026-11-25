@@ -4,6 +4,7 @@
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #if defined(__QNXNTO__)
 #include <dlfcn.h>
@@ -184,12 +185,11 @@ void emit_line(bool debug, const char* fmt, va_list ap) {
 
 void log_init(const char* new_tag) {
   if (!new_tag) new_tag = "";
-  size_t n = 0;
-  while (new_tag[n] && n < kTagMax) {
-    g_tag[n] = new_tag[n];
-    ++n;
-  }
-  g_tag[n] = '\0';
+  // An application's service (NBT_ROLE=service) says so on each line: its log
+  // reaches the phone after the application's.
+  const char* role = getenv("NBT_ROLE");
+  const bool service = role && !strcmp(role, "service");
+  snprintf(g_tag, sizeof(g_tag), "%s%s", new_tag, service ? ":service" : "");
 }
 
 const char* log_tag() {

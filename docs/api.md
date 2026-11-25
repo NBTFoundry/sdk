@@ -93,6 +93,7 @@ The application's side of the bridge described in
 | `int init(argc, argv)` | Parses `--ready-fd`/`--lease-fd` (both or neither), takes a shared lock on the lease, reads `NBT_LAUNCH`, `NBT_SURFACE`, `NBT_BRIDGE_CAPS` and the descriptors of granted capabilities, loads settings, installs signal handlers. Returns 0 (run), 1 (lease or surface unusable), 2 (usage error). |
 | `static bool is_bridge_arg(arg)` | Whether `arg` is `--ready-fd` or `--lease-fd` (each takes a value), to strip them from argv. |
 | `is_check_mode()`, `is_user_mode()`, `can_show()` | `NBT_LAUNCH=check` is a health check without display or input. |
+| `is_service()` | Capability `service` (bridge 1.9): this process is the application's background service (below). |
 | `has_cap(name)`, `bridge_caps()` | The granted capabilities. |
 | `surface_id()`, `status_fd()`, `controller_fd()`, `gamepad_fd()` | Descriptors of granted capabilities, or -1. Input descriptors are validated datagram sockets, made non-blocking. |
 | `data_dir()` | `NBT_DATA_DIR`, the application's private folder. |
@@ -233,6 +234,23 @@ tester (declared `--bridge 1.8 --bridge-optional diag --bridge-diag
   negative answer is `kOk` with its code in `nrc`; `kRefused`, `kNoRoute`,
   `kNotParked`, `kBusy` say why nothing was asked.
 - Native programs only: in modules and guests `init()` is false (`kNoChannel`).
+
+## Background service — bridge 1.9
+
+An application with a screen never runs in the background; its service does
+(`--bridge 1.9 --bridge-uses show --bridge-optional service`; NBT Manager's
+`docs/service-bridge.md`):
+
+- NBT Manager starts the same executable a second time, alongside the
+  application: `Lifecycle::is_service()` is then true, with no window, no
+  controller, gamepad or status line, and every other granted capability.
+  It keeps running when the application leaves the screen or ends, and is
+  started again after it ends on its own (three times).
+- Both have the same `data_dir()`: a local socket there joins them. The
+  service's log lines say `<tag>:service` and reach the phone with the
+  application's.
+- Until NBT Manager mixes audio, one process plays: the service, which the
+  application tells what to play.
 
 ## Other programs — `nbt/app/child.hpp`, `nbt/app/payload.h`
 

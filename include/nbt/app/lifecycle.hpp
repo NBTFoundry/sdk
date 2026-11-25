@@ -39,6 +39,10 @@ class Lifecycle {
   /* User mode with capability `show`: SIGUSR1 asks to come to the front. */
   bool can_show() const { return can_show_; }
   bool has_cap(const char* cap) const;
+  /* Capability `service` (bridge 1.9): this process is the application's
+   * background service, without screen or input; the screen process has
+   * `show` too (NBT Manager's docs/service-bridge.md). */
+  bool is_service() const { return has_cap("service") && !has_cap("show"); }
   const char* bridge_caps() const { return caps_; }
   /* NBT_DATA_DIR, the application's private folder, or "". */
   const char* data_dir() const;

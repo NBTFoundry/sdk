@@ -713,6 +713,10 @@ void test_log() {
   CHECK(!strcmp(log_current_stage(), "unit_test"));
   log_init("a-very-long-tag-that-is-cut-short");
   CHECK(strlen(log_tag()) == 23);
+  setenv("NBT_ROLE", "service", 1); /* an application's service says so */
+  log_init("sdktest");
+  CHECK(!strcmp(log_tag(), "sdktest:service"));
+  unsetenv("NBT_ROLE");
   fflush(stderr);
   dup2(saved_stderr, STDERR_FILENO);
   close(saved_stderr);
@@ -1026,6 +1030,7 @@ void test_bridge_16() {
   {
     Lifecycle lc;
     CHECK(lc.init(1, argv) == 0);
+    CHECK(!lc.is_service());
     CHECK(!strcmp(lc.net_rules(), "tcp:5277@uap0+wfd0"));
     CHECK(lc.request_hold(Lifecycle::kHold));
     char text[32] = "";
@@ -1052,6 +1057,17 @@ void test_bridge_16() {
         !strcmp(value, "{\"gear\":2}"));
   CHECK(!cars.read("../driving.gear", value, sizeof(value), &seq));
   CHECK(!cars.read("driving.gear", value, 4, &seq)); /* too small */
+  /* An application's service (bridge 1.9): `service` without `show`. */
+  setenv("NBT_BRIDGE_CAPS", "show,service", 1);
+  {
+    Lifecycle lc;
+    CHECK(lc.init(1, argv) == 0 && !lc.is_service());
+  }
+  setenv("NBT_BRIDGE_CAPS", "car-data,service", 1);
+  {
+    Lifecycle lc;
+    CHECK(lc.init(1, argv) == 0 && lc.is_service());
+  }
   /* Without the grants: nothing. */
   setenv("NBT_BRIDGE_CAPS", "", 1);
   {

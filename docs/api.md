@@ -232,6 +232,7 @@ tester (declared `--bridge 1.8 --bridge-optional diag --bridge-diag
 - Each call blocks until the answer: call it off the drawing thread. A
   negative answer is `kOk` with its code in `nrc`; `kRefused`, `kNoRoute`,
   `kNotParked`, `kBusy` say why nothing was asked.
+- Native programs only: in modules and guests `init()` is false (`kNoChannel`).
 
 ## Other programs — `nbt/app/child.hpp`, `nbt/app/payload.h`
 

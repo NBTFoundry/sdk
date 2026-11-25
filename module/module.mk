@@ -50,7 +50,7 @@ MOD_OBJ := $(OBJ_DIR)/mod
 MOD_CFLAGS := $(MODULE_CFLAGS) $(INC) -std=gnu99
 MOD_CXXFLAGS := $(MODULE_CXXFLAGS) $(INC) -std=c++11 -fno-exceptions -fno-rtti
 MOD_PLATFORM_SRC := src/lifecycle.cpp src/video_qnx.cpp src/video_egl.cpp src/audio_pcm.cpp src/audio_a2i.cpp \
-	src/child.cpp
+	src/child.cpp src/diag_channel.cpp
 MOD_SDK_SRC := $(filter-out $(MOD_PLATFORM_SRC),$(SDK_SRC)) $(sort $(wildcard module/sdk/*.cpp))
 MOD_GL_C := $(BUILD_DIR)/module-gl/gl_table.c
 

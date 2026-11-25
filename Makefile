@@ -70,7 +70,9 @@ READER_FILES := \
 	include/nbt/bridge_hold.h:include/nbt/bridge_hold.h \
 	src/readers/bridge_hold.cpp:src/sdk/bridge_hold.cpp \
 	include/nbt/diag_wire.h:include/nbt/diag_wire.h \
-	src/readers/diag_wire.cpp:src/sdk/diag_wire.cpp
+	src/readers/diag_wire.cpp:src/sdk/diag_wire.cpp \
+	include/nbt/companion_wire.h:include/nbt/companion_wire.h \
+	src/readers/companion_wire.cpp:src/sdk/companion_wire.cpp
 
 SDK_SRC := $(sort $(wildcard src/*.cpp src/*.c src/readers/*.cpp))
 MIXER_SRC := mixer/audio_mixer.cpp

@@ -24,6 +24,7 @@
 #include "nbt/app/child.hpp"
 #include "nbt/app/input_mixer.hpp"
 #include "nbt/app/car_data.hpp"
+#include "nbt/app/companion.hpp"
 #include "nbt/app/diag.hpp"
 #include "nbt/diag_wire.h"
 #include "nbt/app/lifecycle.hpp"
@@ -967,6 +968,72 @@ void test_host_keys() {
 
 }  // namespace
 
+// Capability companion (bridge 1.9): the page on fd 11, written when it
+// changes, and the phone's events read in order.
+void test_companion() {
+  using nbt::app::Companion;
+  char dir[] = "/tmp/nbt-sdk-companion-XXXXXX", page_path[96], events_path[96], text[4097];
+  CHECK(mkdtemp(dir) != NULL);
+  snprintf(page_path, sizeof(page_path), "%s/page", dir);
+  snprintf(events_path, sizeof(events_path), "%s/events", dir);
+  unsetenv("NBT_COMPANION_FD");
+  {
+    Companion none;
+    CHECK(!none.init() && !none.available() && !none.publish());
+  }
+  const int page = open(page_path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+  CHECK(page >= 0 && dup2(page, 11) == 11 && close(page) == 0);
+  setenv("NBT_COMPANION_FD", "11", 1);
+  setenv("NBT_COMPANION_EVENTS", events_path, 1);
+  Companion c;
+  CHECK(c.init() && c.available());
+  const char* const modes[] = {"eco", "sport"};
+  c.begin();
+  CHECK(c.title("Boost") && c.text("1.2 bar") && c.button("go", "Go"));
+  CHECK(c.toggle("log", "Log", true) && c.choice("mode", "Mode", "sport", modes, 2));
+  CHECK(c.progress("Oil", 75));
+  CHECK(!c.title("") && !c.text("a\tb") && !c.button("Go", "Go") && !c.progress("Oil", 101));
+  CHECK(!c.choice("mode", "Mode", "race", modes, 2) && !c.choice("mode", "Mode", "eco", modes, 0));
+  CHECK(c.publish());
+  const char expected[] =
+      "1\ntitle\tBoost\ntext\t1.2 bar\nbutton\tgo\tGo\ntoggle\tlog\tLog\t1\n"
+      "choice\tmode\tMode\tsport\teco,sport\nprogress\tOil\t75\n";
+  memset(text, 0, sizeof(text));
+  CHECK(pread(11, text, sizeof(text) - 1, 0) == static_cast<ssize_t>(strlen(expected)) &&
+        !strcmp(text, expected));
+  uint64_t sequence = 0;
+  CHECK(!nbt_companion_page_check(text, strlen(text), &sequence) && sequence == 1);
+  c.begin();
+  CHECK(c.title("Boost") && c.text("1.2 bar") && c.button("go", "Go"));
+  CHECK(c.toggle("log", "Log", true) && c.choice("mode", "Mode", "sport", modes, 2));
+  CHECK(c.progress("Oil", 75) && c.publish());
+  CHECK(pread(11, text, 2, 0) == 2 && !memcmp(text, "1\n", 2)); /* unchanged, not rewritten */
+  c.begin();
+  CHECK(c.title("Done") && c.publish());
+  memset(text, 0, sizeof(text));
+  CHECK(pread(11, text, sizeof(text) - 1, 0) == 13 && !strcmp(text, "2\ntitle\tDone\n"));
+  c.begin();
+  for (unsigned i = 0; i < NBT_COMPANION_WIDGETS_MAX; ++i) CHECK(c.text("x"));
+  CHECK(!c.text("x")); /* 33 */
+  Companion::Event event;
+  CHECK(!c.next(&event));
+  const int events = open(events_path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+  const char lines[] = "1\tgo\t\n2\tmode\teco\nbad\n3\tlog\t0\n";
+  CHECK(events >= 0 && write(events, lines, strlen(lines)) == static_cast<ssize_t>(strlen(lines)) &&
+        close(events) == 0);
+  CHECK(c.next(&event) && !strcmp(event.id, "go") && !event.value[0]);
+  CHECK(c.next(&event) && !strcmp(event.id, "mode") && !strcmp(event.value, "eco"));
+  CHECK(c.next(&event) && !strcmp(event.id, "log") && !strcmp(event.value, "0"));
+  CHECK(!c.next(&event));
+  close(11);
+  unlink(page_path);
+  unlink(events_path);
+  rmdir(dir);
+  unsetenv("NBT_COMPANION_FD");
+  unsetenv("NBT_COMPANION_EVENTS");
+  g_tests_run++;
+}
+
 /* Bridge 1.6: the hold request and answer, the network rules, car data. */
 // Capability diag (bridge 1.8): requests out, answers matched by id, the
 // helpers unwrap positive and negative answers.
@@ -1153,6 +1220,7 @@ int main() {
   test_lifecycle();
   test_bridge_16();
   test_diag();
+  test_companion();
   test_audio_mixer();
   test_audio_a2i();
   test_log();

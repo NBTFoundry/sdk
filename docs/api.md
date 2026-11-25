@@ -255,6 +255,20 @@ An application with a screen never runs in the background; its service does
   application's.
 - Both may play: NBT Manager's mixer plays every process at once.
 
+## Phone companion — `nbt/app/companion.hpp`, bridge 1.9
+
+A page of a few widgets in the phone app, and the driver's taps back
+(`--bridge 1.9 --bridge-optional companion`; NBT Manager's
+`docs/companion-bridge.md`). The driver sees "phone screen" before install.
+
+- `nbt::app::Companion`, `init()`; then, from the main loop, `begin()`,
+  widgets (`title`, `text`, `button`, `toggle`, `choice`, `progress`) and
+  `publish()`, written only when the page changed. At most 32 widgets.
+- `next(&event)` gives the phone's events oldest first: the widget's id and
+  its value (empty for a button, `0`/`1` for a toggle, the choice).
+- The service has the page when the application declares one; the phone shows
+  it while that process runs. Native programs and modules.
+
 ## Other programs — `nbt/app/child.hpp`, `nbt/app/payload.h`
 
 An application may start the head unit's tools, or a companion program it

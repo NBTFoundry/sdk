@@ -22,6 +22,8 @@ Workstation values (test key, kit folder, toolchain): the workspace `CLAUDE.md`.
    everything**: the debug, iDrive and application logs, `audioconn -l`,
    processes and the manager's files, in one file to share).
    - what is needed (kit version, phone app paired, the ENET adapter);
+   - first, when the kit's manager has it, Settings › **Self test** (a
+     minute): a platform problem shows there, not as the app's;
    - parts in order, each step with what to look at: A install and health
      check, settings; B start and use (every control, sound, files); C stop,
      start again, update while running; D failures; then the logs to collect

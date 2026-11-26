@@ -6,7 +6,9 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <new>
 #include <poll.h>
 #include <pthread.h>
@@ -53,12 +55,15 @@ bool send_all(int fd, const void* data, size_t size) {
   return true;
 }
 
-enum { kRingFrames = 8192, kTargetFrames = 4096, kIdleCloseMs = 3000 };
+// A client's ring is topped up to kTargetFrames (46 ms) each time the device
+// takes from it; kSocketBuffer bounds what waits in the socket besides.
+enum { kRingFrames = 8192, kTargetFrames = 2048, kIdleCloseMs = 3000, kSocketBuffer = 4096 };
 
 // One client: the record being read, then its frames waiting to be played.
+// `parked` while the serving loop does not read it (its ring is full).
 struct Client {
   int fd;
-  bool greeted, route;
+  bool greeted, route, parked;
   uint8_t record[4 + kMixRecordMax];
   size_t have;
   int16_t ring[kRingFrames * 2];
@@ -67,14 +72,18 @@ struct Client {
 
 class Mixer {
  public:
-  Mixer() : device_open_(false), route_(false), capture_(NULL), produced_(0), started_ms_(0) {
+  Mixer() : device_open_(false), route_(false), capture_(NULL), capture_stop_(false) {
     pthread_mutex_init(&mutex_, NULL);
     memset(clients_, 0, sizeof(clients_));
+    wake_[0] = wake_[1] = -1;
   }
   ~Mixer() {
     for (Client*& c : clients_) drop(c);
-    out_.close();
+    close_output();
     if (capture_) fclose(capture_);
+    for (int fd : wake_) {
+      if (fd >= 0) close(fd);
+    }
     pthread_mutex_destroy(&mutex_);
   }
 
@@ -82,8 +91,13 @@ class Mixer {
     struct sockaddr_in where;
     if (!parse_address(address, &where)) return 1;
     unsetenv("NBT_AUDIO_MIXER");  // its own output is the device
+    if (pipe(wake_) != 0) return 1;
+    for (int fd : wake_) {
+      (void)fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+      (void)fcntl(fd, F_SETFD, FD_CLOEXEC);
+    }
     const int listener = socket(AF_INET, SOCK_STREAM, 0);
-    const int on = 1;
+    const int on = 1, buffer = kSocketBuffer;  // accepted sockets inherit it
     if (listener < 0 || setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) ||
         bind(listener, reinterpret_cast<struct sockaddr*>(&where), sizeof(where)) ||
         listen(listener, 8)) {
@@ -91,6 +105,7 @@ class Mixer {
       if (listener >= 0) close(listener);
       return code;
     }
+    (void)setsockopt(listener, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer));
     const char* capture = getenv("NBT_MIX_CAPTURE");
     if (capture && capture[0] && !(capture_ = fopen(capture, "wb"))) {
       close(listener);
@@ -99,10 +114,12 @@ class Mixer {
     log_info("mixer: serving %s", address);
     uint64_t alone_since = monotonic_ms();
     while (true) {
-      struct pollfd fds[1 + kMixClientsMax];
-      Client* owner[1 + kMixClientsMax];
+      struct pollfd fds[2 + kMixClientsMax];
+      Client* owner[2 + kMixClientsMax];
       nfds_t count = 0;
       fds[count] = {listener, POLLIN, 0};
+      owner[count++] = NULL;
+      fds[count] = {wake_[0], POLLIN, 0};  // a parked client has room again
       owner[count++] = NULL;
       for (Client* c : clients_) {
         if (c && wants_input(c)) {
@@ -110,12 +127,16 @@ class Mixer {
           owner[count++] = c;
         }
       }
-      const int ready = poll(fds, count, capture_ ? 10 : 100);
+      const int ready = poll(fds, count, 100);
       if (ready < 0 && errno != EINTR) break;
       for (nfds_t i = 0; ready > 0 && i < count; ++i) {
         if (!fds[i].revents) continue;
         if (owner[i]) {
           read_from(owner[i]);
+        } else if (fds[i].fd == wake_[0]) {
+          char drain[16];
+          while (read(wake_[0], drain, sizeof(drain)) > 0) {
+          }
         } else {
           accept_from(listener);
         }
@@ -136,9 +157,10 @@ class Mixer {
   }
 
  private:
-  bool wants_input(const Client* c) {
+  bool wants_input(Client* c) {
     pthread_mutex_lock(&mutex_);
     const bool room = c->used < kTargetFrames;
+    c->parked = !room;
     pthread_mutex_unlock(&mutex_);
     return room;
   }
@@ -209,23 +231,28 @@ class Mixer {
     if (c->record[0] == 'R' && length == 1) {
       c->route = c->record[4] != 0;
     } else if (c->record[0] == 'P' && length % 4 == 0) {
-      push(c, reinterpret_cast<const int16_t*>(c->record + 4), length / 4);
+      push(c, c->record + 4, length / 4);
     } else {
       drop(slot(c));
     }
   }
 
-  void push(Client* c, const int16_t* frames, size_t count) {
+  // `frames` may sit at any address in the record: copied as bytes (the car
+  // faults on a misaligned 16-bit load).
+  void push(Client* c, const uint8_t* frames, size_t count) {
     pthread_mutex_lock(&mutex_);
     for (size_t i = 0; i < count && c->used < kRingFrames; ++i, ++c->used) {
       const size_t at = (c->head + c->used) % kRingFrames;
-      c->ring[2 * at] = frames[2 * i];
-      c->ring[2 * at + 1] = frames[2 * i + 1];
+      memcpy(&c->ring[2 * at], frames + 4 * i, 4);
     }
     pthread_mutex_unlock(&mutex_);
   }
 
+  // The device's thread. A parked client whose ring falls below the target
+  // wakes the serving loop, so each client is read as steadily as the device
+  // plays and its own render is paced the same way.
   void render(int16_t* out, int frames) {
+    bool wake = false;
     pthread_mutex_lock(&mutex_);
     for (int i = 0; i < frames; ++i) {
       int32_t left = 0, right = 0;
@@ -241,51 +268,83 @@ class Mixer {
                                             : right < -32768 ? -32768
                                                              : right);
     }
+    for (Client* c : clients_) {
+      if (c && c->parked && c->used < kTargetFrames) {
+        c->parked = false;
+        wake = true;
+      }
+    }
     pthread_mutex_unlock(&mutex_);
+    const char byte = 1;
+    if (wake && write(wake_[1], &byte, 1) < 0) {
+      // full: the loop is already due to wake
+    }
   }
 
   // The device opens with the first client and closes kIdleCloseMs after the last.
   void update_output(bool anyone, uint64_t alone_ms) {
     bool route = false;
     for (const Client* c : clients_) route = route || (c && c->greeted && c->route);
-    if (capture_) {
-      write_capture();
-      return;
-    }
     if (anyone && !device_open_) {
-      device_open_ = out_.open(kMixRate, &Mixer::render_entry, this, route);
+      device_open_ =
+          capture_ ? start_capture() : out_.open(kMixRate, &Mixer::render_entry, this, route);
       route_ = route;
       if (!device_open_) log_info("mixer: no audio output");
     } else if (device_open_ && !anyone && alone_ms >= kIdleCloseMs) {
-      out_.close();
-      device_open_ = false;
-    } else if (device_open_ && route != route_) {
+      close_output();
+    } else if (device_open_ && !capture_ && route != route_) {
       out_.set_route_wanted(route);
       route_ = route;
     }
   }
 
-  // Tests: the mix written at the mixer's rate, paced by the clock.
-  void write_capture() {
-    const uint64_t now = monotonic_ms();
-    if (!started_ms_) started_ms_ = now;
-    const uint64_t due = (now - started_ms_) * kMixRate / 1000;
-    int16_t buf[2 * 512];
-    while (produced_ < due) {
-      const int n = due - produced_ < 512 ? static_cast<int>(due - produced_) : 512;
-      render(buf, n);
-      fwrite(buf, 4, static_cast<size_t>(n), capture_);
-      produced_ += static_cast<uint64_t>(n);
+  void close_output() {
+    if (!device_open_) return;
+    if (capture_) {
+      capture_stop_ = true;
+      pthread_join(capture_thread_, NULL);
+    } else {
+      out_.close();
+    }
+    device_open_ = false;
+  }
+
+  // Tests: the device's stand-in. Its own thread takes a fragment each time
+  // the device would, at the mixer's rate, and writes it to the file.
+  bool start_capture() {
+    capture_stop_ = false;
+    return pthread_create(&capture_thread_, NULL, &Mixer::capture_entry, this) == 0;
+  }
+
+  static void* capture_entry(void* self) {
+    static_cast<Mixer*>(self)->capture_loop();
+    return NULL;
+  }
+
+  void capture_loop() {
+    int16_t buf[2 * kAudioFragFrames];
+    const uint64_t started = monotonic_ms();
+    uint64_t produced = 0;
+    while (!capture_stop_) {
+      if ((produced + kAudioFragFrames) * 1000 > (monotonic_ms() - started) * kMixRate) {
+        usleep(1000);
+        continue;
+      }
+      render(buf, kAudioFragFrames);
+      fwrite(buf, 4, kAudioFragFrames, capture_);
+      produced += kAudioFragFrames;
     }
     fflush(capture_);
   }
 
   pthread_mutex_t mutex_;
+  int wake_[2];
   Client* clients_[kMixClientsMax];
   AudioPcm out_;
   bool device_open_, route_;
   FILE* capture_;
-  uint64_t produced_, started_ms_;
+  pthread_t capture_thread_;
+  volatile bool capture_stop_;
 };
 
 }  // namespace
@@ -294,9 +353,10 @@ int mix_connect(const char* address, int* rate) {
   struct sockaddr_in where;
   if (!parse_address(address, &where) || !rate) return -1;
   const int fd = socket(AF_INET, SOCK_STREAM, 0);
-  const int buffer = 8192;  // little latency between the application and the mix
+  const int buffer = kSocketBuffer, on = 1;  // little latency between the application and the mix
   if (fd < 0) return -1;
   (void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buffer, sizeof(buffer));
+  (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
   char reply[32];
   size_t have = 0;
   if (connect(fd, reinterpret_cast<struct sockaddr*>(&where), sizeof(where)) ||
@@ -323,10 +383,16 @@ int mix_connect(const char* address, int* rate) {
   return fd;
 }
 
+// One send per record: a header sent alone would wait for its ACK (Nagle).
 bool mix_send(int fd, char type, const void* data, uint16_t size) {
-  const uint8_t header[4] = {static_cast<uint8_t>(type), 0, static_cast<uint8_t>(size),
-                             static_cast<uint8_t>(size >> 8)};
-  return send_all(fd, header, sizeof(header)) && (!size || send_all(fd, data, size));
+  if (size > kMixRecordMax) return false;
+  uint8_t record[4 + kMixRecordMax];
+  record[0] = static_cast<uint8_t>(type);
+  record[1] = 0;
+  record[2] = static_cast<uint8_t>(size);
+  record[3] = static_cast<uint8_t>(size >> 8);
+  if (size) memcpy(record + 4, data, size);
+  return send_all(fd, record, 4u + size);
 }
 
 int mix_serve(const char* address, unsigned idle_ms) {

@@ -1209,8 +1209,117 @@ static void test_audio_mix() {
   g_tests_run++;
 }
 
+/* A guest's sound as nbt-runner plays it (guest/media.c, runner/guest_server.c):
+ * a producer thread keeps about two fragments in a ring, the playback thread
+ * drains it and plays silence when it is behind. */
+struct GuestRing {
+  enum { kFrames = 8192 };
+  int16_t ring[2 * kFrames];
+  volatile uint32_t wr, rd;
+  volatile bool run;
+  int frag;
+};
+
+static void* guest_producer(void* arg) {
+  GuestRing* g = static_cast<GuestRing*>(arg);
+  while (g->run) {
+    const uint32_t queued = g->wr - __atomic_load_n(&g->rd, __ATOMIC_ACQUIRE);
+    const uint32_t target = static_cast<uint32_t>(g->frag) * 2;
+    if (queued >= target) {
+      usleep(2000);
+      continue;
+    }
+    uint32_t wr = g->wr;
+    for (uint32_t i = 0; i < target - queued; ++i, ++wr) {
+      g->ring[2 * (wr % GuestRing::kFrames)] = 700;
+      g->ring[2 * (wr % GuestRing::kFrames) + 1] = 700;
+    }
+    __atomic_store_n(&g->wr, wr, __ATOMIC_RELEASE);
+  }
+  return NULL;
+}
+
+static void guest_ring_render(void* context, int16_t* out, int frames) {
+  GuestRing* g = static_cast<GuestRing*>(context);
+  uint32_t rd = g->rd;
+  const uint32_t avail = __atomic_load_n(&g->wr, __ATOMIC_ACQUIRE) - rd;
+  for (int i = 0; i < frames; ++i) {
+    const bool have = static_cast<uint32_t>(i) < avail;
+    out[2 * i] = have ? g->ring[2 * (rd % GuestRing::kFrames)] : 0;
+    out[2 * i + 1] = have ? g->ring[2 * (rd % GuestRing::kFrames) + 1] : 0;
+    if (have) ++rd;
+  }
+  __atomic_store_n(&g->rd, rd, __ATOMIC_RELEASE);
+}
+
+/* The mixer reads each client steadily, as the device plays: a guest's sound
+ * comes out without gaps once it has started (it stuttered in the car while
+ * the mixer read clients in bursts, up to 100 ms apart). */
+static void test_audio_mix_steady() {
+  char capture[] = "/tmp/nbt-mix-XXXXXX";
+  const int capture_fd = mkstemp(capture);
+  CHECK(capture_fd >= 0);
+  close(capture_fd);
+  char address[32];
+  snprintf(address, sizeof(address), "127.0.0.1:%d", 45000 + getpid() % 5000);
+  const pid_t mixer = fork();
+  CHECK(mixer >= 0);
+  if (mixer == 0) {
+    setenv("NBT_MIX_CAPTURE", capture, 1);
+    _exit(nbt::app::mix_serve(address, 300));
+  }
+  int rate = 0, probe = -1;
+  for (int i = 0; i < 100 && probe < 0; ++i) {  // until it listens
+    probe = nbt::app::mix_connect(address, &rate);
+    if (probe < 0) usleep(20000);
+  }
+  CHECK(probe >= 0);
+  setenv("NBT_AUDIO_MIXER", address, 1);
+  static GuestRing guest;
+  memset(&guest, 0, sizeof(guest));
+  {
+    nbt::app::AudioPcm pcm;
+    guest.frag = 882;  // the mixer's record: 20 ms
+    guest.run = true;
+    pthread_t producer;
+    CHECK(pthread_create(&producer, NULL, guest_producer, &guest) == 0);
+    close(probe);
+    CHECK(pcm.open(44100, guest_ring_render, &guest, true) && pcm.frag_frames() == guest.frag);
+    usleep(1500000);
+    pcm.close();
+    guest.run = false;
+    pthread_join(producer, NULL);
+  }
+  unsetenv("NBT_AUDIO_MIXER");
+  int status = -1;
+  CHECK(waitpid(mixer, &status, 0) == mixer && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  FILE* in = fopen(capture, "rb");
+  CHECK(in != NULL);
+  static int16_t mix[2 * 44100 * 4];
+  const size_t frames = fread(mix, 4, sizeof(mix) / 4, in);
+  fclose(in);
+  unlink(capture);
+  size_t first = frames, last = 0;
+  for (size_t i = 0; i < frames; ++i) {
+    if (!mix[2 * i]) continue;
+    if (first == frames) first = i;
+    last = i;
+  }
+  CHECK(first < frames && last - first > static_cast<size_t>(rate));  // over a second of sound
+  size_t gaps = 0, silent = 0;
+  for (size_t i = first + static_cast<size_t>(rate) / 4; i < last; ++i) {  // once started
+    if (mix[2 * i]) continue;
+    ++silent;
+    if (mix[2 * i - 2]) ++gaps;
+  }
+  if (silent) printf("audio mix: %zu gaps, %zu silent frames\n", gaps, silent);
+  CHECK(silent == 0);
+  g_tests_run++;
+}
+
 int main() {
   test_audio_mix();
+  test_audio_mix_steady();
   test_gles2_matrix_and_batch();
   test_readers();
   test_input_mixer();

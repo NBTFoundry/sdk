@@ -21,7 +21,9 @@ AudioPcm::AudioPcm()
       thread_(),
       a2i_(NULL),
       mix_fd_(-1),
-      mix_route_(false) {}
+      mix_pull_(false),
+      mix_route_(false),
+      frags_(0) {}
 
 AudioPcm::~AudioPcm() {
   close();

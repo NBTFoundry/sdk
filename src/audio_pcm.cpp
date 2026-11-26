@@ -2,9 +2,13 @@
 #include "nbt/app/audio_pcm.hpp"
 
 #include <dlfcn.h>
+#include <errno.h>
 #include <new>
+#include <poll.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 #ifdef __QNXNTO__
@@ -137,15 +141,19 @@ void AudioPcm::set_route_wanted(bool wanted) {
 bool AudioPcm::open_mixer() {
   const char* mixer = getenv("NBT_AUDIO_MIXER");
   int rate = 0;
+  bool pull = true;
   if (!mixer || !mixer[0]) return false;
-  mix_fd_ = mix_connect(mixer, &rate);
+  mix_fd_ = mix_connect(mixer, &rate, &pull);
   if (mix_fd_ < 0) {
     log_info("audio: mixer %s did not answer; the device instead", mixer);
     return false;
   }
   sample_rate_ = rate;
-  frag_frames_ = rate / 100 * 2;  // 20 ms per record, within kMixRecordMax
-  log_info("audio: through the mixer at %d Hz", rate);
+  mix_pull_ = pull;
+  // Version 2: what the mixer asks, a device fragment at a time. Version 1
+  // (an older mixer): 20 ms per record, within kMixRecordMax.
+  frag_frames_ = pull ? kMixFragFrames : rate / 100 * 2;
+  log_info("audio: through the mixer at %d Hz (%s)", rate, pull ? "asked" : "pushed");
   return true;
 }
 
@@ -212,10 +220,11 @@ bool AudioPcm::open_device() {
     frag_bytes = choose_qnx_frag_size(frag_bytes, 0, 0);
   }
 
-  static const int kFragsTries[3][2] = {{0, 5}, {0, 10}, {1, 8}};
+  // set_buffer_frags' count first, then the usual ones.
+  const int kFragsTries[4][2] = {{0, frags_ > 0 ? frags_ : 5}, {0, 5}, {0, 10}, {1, 8}};
   bool params_ok = false;
   unsigned int last_why = 0;
-  for (int t = 0; t < 3; t++) {
+  for (int t = 0; t < 4; t++) {
     int try_frag = (kFragsTries[t][0] && frag_bytes <= 4096) ? (frag_bytes * 2) : frag_bytes;
     snd_pcm_channel_params_t params;
     memset(&params, 0, sizeof(params));
@@ -323,13 +332,18 @@ void AudioPcm::playback_loop() {
   const int frames = (frag_frames_ >= 64 && frag_frames_ <= 2048) ? frag_frames_ : kAudioFragFrames;
   int16_t* buf = static_cast<int16_t*>(calloc(static_cast<size_t>(frames * 2), sizeof(int16_t)));
   if (!buf) return;
+  audio_thread_priority();
   if (a2i_ && a2i_->is_open()) {
     a2i_loop(buf, frames);
     free(buf);
     return;
   }
   if (mix_fd_ >= 0) {
-    mix_loop(buf, frames);
+    if (mix_pull_) {
+      mix_pull_loop(buf, frames);
+    } else {
+      mix_loop(buf, frames);
+    }
     free(buf);
     return;
   }
@@ -415,6 +429,66 @@ void AudioPcm::mix_loop(int16_t* buf, int frames) {
       break;
     }
   }
+}
+
+// Renders what the mixer asks for ('C' records), just in time.
+void AudioPcm::mix_pull_loop(int16_t* buf, int frames) {
+  bool told = false, route = false;
+  uint8_t credit[8];
+  size_t have = 0;
+  uint32_t owed = 0;
+  while (!stop_requested_) {
+    const bool wanted = mix_route_;
+    if (!told || wanted != route) {
+      const uint8_t value = wanted ? 1 : 0;
+      if (!mix_send(mix_fd_, 'R', &value, 1)) break;
+      told = true;
+      route = wanted;
+    }
+    if (owed) {
+      const int n = owed < static_cast<uint32_t>(frames) ? static_cast<int>(owed) : frames;
+      render_(render_context_, buf, n);
+      if (!mix_send(mix_fd_, 'P', buf, static_cast<uint16_t>(n * 4))) break;
+      owed -= static_cast<uint32_t>(n);
+      continue;
+    }
+    struct pollfd p = {mix_fd_, POLLIN, 0};
+    const int ready = poll(&p, 1, 50);  // stop and route checks meanwhile
+    if (ready < 0 && errno != EINTR) break;
+    if (ready <= 0) continue;
+    const ssize_t n = recv(mix_fd_, credit + have, sizeof(credit) - have, 0);
+    if (n <= 0) break;
+    have += static_cast<size_t>(n);
+    if (have < sizeof(credit)) continue;
+    have = 0;
+    if (credit[0] != 'C' || credit[1] || credit[2] != 4 || credit[3]) break;
+    owed += credit[4] | credit[5] << 8 | credit[6] << 16 | static_cast<uint32_t>(credit[7]) << 24;
+    if (owed > 65536) break;  // no mixer asks that much
+  }
+  if (!stop_requested_) log_info("audio: the mixer is gone");
+}
+
+void audio_thread_priority() {
+#ifdef __QNXNTO__
+  struct sched_param param;
+  int policy = 0;
+  if (pthread_getschedparam(pthread_self(), &policy, &param) != 0) return;
+  const int own = param.sched_priority;
+  if (own >= kAudioPriority) return;
+  memset(&param, 0, sizeof(param));
+  param.sched_priority = kAudioPriority;
+  param.sched_ss_low_priority = own;
+  param.sched_ss_max_repl = 8;
+  param.sched_ss_repl_period.tv_nsec = kAudioPeriodMs * 1000000L;
+  param.sched_ss_init_budget.tv_nsec = kAudioBudgetMs * 1000000L;
+  const int rc = pthread_setschedparam(pthread_self(), SCHED_SPORADIC, &param);
+  if (rc) {
+    log_info("audio: thread priority %d not set (%s), stays %d", kAudioPriority, strerror(rc), own);
+  } else {
+    log_debug("audio: thread priority %d (%d beyond %d ms in %d ms)", kAudioPriority, own,
+              kAudioBudgetMs, kAudioPeriodMs);
+  }
+#endif
 }
 
 void AudioPcm::a2i_loop(int16_t* buf, int frames) {

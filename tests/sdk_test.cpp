@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "nbt/app/audio_a2i.hpp"
@@ -1172,12 +1174,13 @@ static void test_audio_mix() {
     _exit(nbt::app::mix_serve(address, 800));
   }
   int rate = 0, fd = -1;
+  bool pull = false;                         // a raw client of an older SDK: version 1, pushed
   for (int i = 0; i < 100 && fd < 0; ++i) {  // until it listens
-    fd = nbt::app::mix_connect(address, &rate);
+    fd = nbt::app::mix_connect(address, &rate, &pull);
     if (fd < 0) usleep(20000);
   }
-  CHECK(fd >= 0 && rate == nbt::app::kMixRate);
-  CHECK(nbt::app::mix_connect("127.0.0.1", &rate) < 0); /* no port */
+  CHECK(fd >= 0 && rate == nbt::app::kMixRate && !pull);
+  CHECK(nbt::app::mix_connect("127.0.0.1", &rate, &pull) < 0); /* no port */
   setenv("NBT_AUDIO_MIXER", address, 1);
   int16_t level = 500;
   {
@@ -1210,15 +1213,24 @@ static void test_audio_mix() {
 }
 
 /* A guest's sound as nbt-runner plays it (guest/media.c, runner/guest_server.c):
- * a producer thread keeps about two fragments in a ring, the playback thread
- * drains it and plays silence when it is behind. */
+ * a producer thread keeps two of the runner's fragments in a ring, the
+ * playback thread drains it and plays silence when it is behind. `level` is
+ * what the producer writes; the time it first wrote a non-zero frame is kept. */
 struct GuestRing {
   enum { kFrames = 8192 };
   int16_t ring[2 * kFrames];
   volatile uint32_t wr, rd;
   volatile bool run;
+  volatile int16_t level;
+  volatile uint64_t first_write_us;
   int frag;
 };
+
+static uint64_t now_us() {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return static_cast<uint64_t>(t.tv_sec) * 1000000u + static_cast<uint64_t>(t.tv_nsec) / 1000u;
+}
 
 static void* guest_producer(void* arg) {
   GuestRing* g = static_cast<GuestRing*>(arg);
@@ -1229,11 +1241,13 @@ static void* guest_producer(void* arg) {
       usleep(2000);
       continue;
     }
+    const int16_t level = g->level;
     uint32_t wr = g->wr;
     for (uint32_t i = 0; i < target - queued; ++i, ++wr) {
-      g->ring[2 * (wr % GuestRing::kFrames)] = 700;
-      g->ring[2 * (wr % GuestRing::kFrames) + 1] = 700;
+      g->ring[2 * (wr % GuestRing::kFrames)] = level;
+      g->ring[2 * (wr % GuestRing::kFrames) + 1] = level;
     }
+    if (level && !g->first_write_us) g->first_write_us = now_us();
     __atomic_store_n(&g->wr, wr, __ATOMIC_RELEASE);
   }
   return NULL;
@@ -1252,16 +1266,24 @@ static void guest_ring_render(void* context, int16_t* out, int frames) {
   __atomic_store_n(&g->rd, rd, __ATOMIC_RELEASE);
 }
 
-/* The mixer reads each client steadily, as the device plays: a guest's sound
- * comes out without gaps once it has started (it stuttered in the car while
- * the mixer read clients in bursts, up to 100 ms apart). */
-static void test_audio_mix_steady() {
+/* What the mixer played of a guest: its frames as the output took them, and
+ * the time it took frame 0 (µs, CLOCK_MONOTONIC). The guest plays `level`
+ * from `level_after_ms` on, silence before. */
+struct GuestPlay {
+  enum { kMax = 44100 * 4 };
+  int16_t mix[2 * kMax];
+  size_t frames;
+  uint64_t t0_us, first_write_us;
+  int frag;
+};
+
+static void play_guest(GuestPlay* out, unsigned level_after_ms, unsigned total_ms) {
   char capture[] = "/tmp/nbt-mix-XXXXXX";
   const int capture_fd = mkstemp(capture);
   CHECK(capture_fd >= 0);
   close(capture_fd);
   char address[32];
-  snprintf(address, sizeof(address), "127.0.0.1:%d", 45000 + getpid() % 5000);
+  snprintf(address, sizeof(address), "127.0.0.1:%d", 45000 + (getpid() + total_ms) % 5000);
   const pid_t mixer = fork();
   CHECK(mixer >= 0);
   if (mixer == 0) {
@@ -1270,7 +1292,8 @@ static void test_audio_mix_steady() {
   }
   int rate = 0, probe = -1;
   for (int i = 0; i < 100 && probe < 0; ++i) {  // until it listens
-    probe = nbt::app::mix_connect(address, &rate);
+    bool pull = true;
+    probe = nbt::app::mix_connect(address, &rate, &pull);
     if (probe < 0) usleep(20000);
   }
   CHECK(probe >= 0);
@@ -1279,13 +1302,17 @@ static void test_audio_mix_steady() {
   memset(&guest, 0, sizeof(guest));
   {
     nbt::app::AudioPcm pcm;
-    guest.frag = 882;  // the mixer's record: 20 ms
+    guest.frag = nbt::app::kMixFragFrames;  // what the runner tells the guest
+    guest.level = level_after_ms ? 0 : 700;
     guest.run = true;
     pthread_t producer;
     CHECK(pthread_create(&producer, NULL, guest_producer, &guest) == 0);
     close(probe);
-    CHECK(pcm.open(44100, guest_ring_render, &guest, true) && pcm.frag_frames() == guest.frag);
-    usleep(1500000);
+    CHECK(pcm.open(44100, guest_ring_render, &guest, true));
+    out->frag = pcm.frag_frames();
+    usleep(level_after_ms * 1000);
+    guest.level = 700;
+    usleep((total_ms - level_after_ms) * 1000);
     pcm.close();
     guest.run = false;
     pthread_join(producer, NULL);
@@ -1295,31 +1322,69 @@ static void test_audio_mix_steady() {
   CHECK(waitpid(mixer, &status, 0) == mixer && WIFEXITED(status) && WEXITSTATUS(status) == 0);
   FILE* in = fopen(capture, "rb");
   CHECK(in != NULL);
-  static int16_t mix[2 * 44100 * 4];
-  const size_t frames = fread(mix, 4, sizeof(mix) / 4, in);
+  out->frames = fread(out->mix, 4, GuestPlay::kMax, in);
   fclose(in);
   unlink(capture);
-  size_t first = frames, last = 0;
-  for (size_t i = 0; i < frames; ++i) {
-    if (!mix[2 * i]) continue;
-    if (first == frames) first = i;
+  char t0_path[64];
+  snprintf(t0_path, sizeof(t0_path), "%s.t0", capture);
+  FILE* t0 = fopen(t0_path, "r");
+  unsigned long long value = 0;
+  CHECK(t0 != NULL && fscanf(t0, "%llu", &value) == 1);
+  fclose(t0);
+  unlink(t0_path);
+  out->t0_us = value;
+  out->first_write_us = guest.first_write_us;
+}
+
+/* The mixer serves each client as steadily as the output plays: a guest's
+ * sound comes out without gaps once it has started (it stuttered in the car
+ * while the mixer read clients in bursts, up to 100 ms apart). */
+static void test_audio_mix_steady() {
+  static GuestPlay play;
+  play_guest(&play, 0, 1500);
+  CHECK(play.frag == nbt::app::kMixFragFrames);  // the mixer asks (version 2)
+  size_t first = play.frames, last = 0;
+  for (size_t i = 0; i < play.frames; ++i) {
+    if (!play.mix[2 * i]) continue;
+    if (first == play.frames) first = i;
     last = i;
   }
-  CHECK(first < frames && last - first > static_cast<size_t>(rate));  // over a second of sound
+  CHECK(first < play.frames && last - first > static_cast<size_t>(nbt::app::kMixRate));
   size_t gaps = 0, silent = 0;
-  for (size_t i = first + static_cast<size_t>(rate) / 4; i < last; ++i) {  // once started
-    if (mix[2 * i]) continue;
+  for (size_t i = first + nbt::app::kMixRate / 4; i < last; ++i) {  // once started
+    if (play.mix[2 * i]) continue;
     ++silent;
-    if (mix[2 * i - 2]) ++gaps;
+    if (play.mix[2 * i - 2]) ++gaps;
   }
   if (silent) printf("audio mix: %zu gaps, %zu silent frames\n", gaps, silent);
   CHECK(silent == 0);
   g_tests_run++;
 }
 
+/* From the guest's render to the output: its two fragments (23 ms) and the
+ * mixer's 23 ms at most, plus a fragment's scheduling; the device's own
+ * buffer comes after (35 ms on the head unit). */
+static void test_audio_mix_delay() {
+  static GuestPlay play;
+  play_guest(&play, 500, 1000);
+  size_t first = play.frames;
+  for (size_t i = 0; i < play.frames && first == play.frames; ++i) {
+    if (play.mix[2 * i]) first = i;
+  }
+  CHECK(first < play.frames && play.first_write_us);
+  const uint64_t taken_us = play.t0_us + (first / nbt::app::kAudioFragFrames + 1) *
+                                             nbt::app::kAudioFragFrames * 1000000u /
+                                             nbt::app::kMixRate;
+  const long delay_ms = static_cast<long>(taken_us - play.first_write_us) / 1000;
+  printf("audio mix: %ld ms from a guest's render to the output\n", delay_ms);
+  CHECK(delay_ms >= 0 && delay_ms <= 60);
+  g_tests_run++;
+}
+
 int main() {
   test_audio_mix();
   test_audio_mix_steady();
+  test_audio_mix_delay();
   test_gles2_matrix_and_batch();
   test_readers();
   test_input_mixer();

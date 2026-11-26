@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "nbt/app/audio_pcm.hpp"
@@ -26,7 +27,8 @@ namespace nbt {
 namespace app {
 namespace {
 
-const char kHello[] = "NBTMIX1\n";
+const char kHello1[] = "NBTMIX1\n";
+const char kHello2[] = "NBTMIX2\n";
 
 bool parse_address(const char* text, struct sockaddr_in* out) {
   char host[32];
@@ -55,24 +57,48 @@ bool send_all(int fd, const void* data, size_t size) {
   return true;
 }
 
-// A client's ring is topped up to kTargetFrames (46 ms) each time the device
-// takes from it; kSocketBuffer bounds what waits in the socket besides.
-enum { kRingFrames = 8192, kTargetFrames = 2048, kIdleCloseMs = 3000, kSocketBuffer = 4096 };
+uint64_t monotonic_us() {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
+  return static_cast<uint64_t>(now.tv_sec) * 1000000u + static_cast<uint64_t>(now.tv_nsec) / 1000u;
+}
+
+// What waits for the output, per client:
+//   version 2 (pull)  kPullTarget (23 ms) queued or asked for; the mixer asks
+//                     for what is missing, kCreditMin frames at least
+//   version 1 (push)  its ring topped up to kPushTarget (46 ms) each time the
+//                     output takes from it, plus what waits in its socket
+// The output itself holds kOutputFrags fragments (35 ms).
+enum {
+  kRingFrames = 8192,
+  kPullTarget = 1024,
+  kCreditMin = 256,
+  kPushTarget = 2048,
+  kSocketBuffer = 4096,
+  kOutputFrags = 3,
+  kIdleCloseMs = 3000,
+};
 
 // One client: the record being read, then its frames waiting to be played.
-// `parked` while the serving loop does not read it (its ring is full).
+// `parked`: a version 1 client the serving loop does not read (ring full).
 struct Client {
   int fd;
-  bool greeted, route, parked;
+  bool greeted, route, pull, parked;
   uint8_t record[4 + kMixRecordMax];
   size_t have;
   int16_t ring[kRingFrames * 2];
   size_t head, used;  // frames
+  size_t asked;       // version 2: asked for, not yet received
 };
 
 class Mixer {
  public:
-  Mixer() : device_open_(false), route_(false), capture_(NULL), capture_stop_(false) {
+  Mixer()
+      : device_open_(false),
+        route_(false),
+        capture_path_(NULL),
+        capture_(NULL),
+        capture_stop_(false) {
     pthread_mutex_init(&mutex_, NULL);
     memset(clients_, 0, sizeof(clients_));
     wake_[0] = wake_[1] = -1;
@@ -106,11 +132,13 @@ class Mixer {
       return code;
     }
     (void)setsockopt(listener, SOL_SOCKET, SO_RCVBUF, &buffer, sizeof(buffer));
-    const char* capture = getenv("NBT_MIX_CAPTURE");
-    if (capture && capture[0] && !(capture_ = fopen(capture, "wb"))) {
+    capture_path_ = getenv("NBT_MIX_CAPTURE");
+    if (capture_path_ && capture_path_[0] && !(capture_ = fopen(capture_path_, "wb"))) {
       close(listener);
       return 1;
     }
+    audio_thread_priority();  // asks and reads on the output's time
+    out_.set_buffer_frags(kOutputFrags);
     log_info("mixer: serving %s", address);
     uint64_t alone_since = monotonic_ms();
     while (true) {
@@ -119,10 +147,10 @@ class Mixer {
       nfds_t count = 0;
       fds[count] = {listener, POLLIN, 0};
       owner[count++] = NULL;
-      fds[count] = {wake_[0], POLLIN, 0};  // a parked client has room again
+      fds[count] = {wake_[0], POLLIN, 0};  // the output took frames
       owner[count++] = NULL;
       for (Client* c : clients_) {
-        if (c && wants_input(c)) {
+        if (c && (c->pull || wants_input(c))) {
           fds[count] = {c->fd, POLLIN, 0};
           owner[count++] = c;
         }
@@ -145,6 +173,7 @@ class Mixer {
       const bool anyone = connected();
       if (anyone) alone_since = now;
       update_output(anyone, now - alone_since);
+      ask();
       if (!anyone && now - alone_since >= idle_ms) break;
     }
     close(listener);
@@ -159,7 +188,7 @@ class Mixer {
  private:
   bool wants_input(Client* c) {
     pthread_mutex_lock(&mutex_);
-    const bool room = c->used < kTargetFrames;
+    const bool room = c->used < kPushTarget;
     c->parked = !room;
     pthread_mutex_unlock(&mutex_);
     return room;
@@ -205,19 +234,22 @@ class Mixer {
   }
 
   void read_from(Client* c) {
-    if (!c->greeted) {  // "NBTMIX1\n"
-      const ssize_t n = recv(c->fd, c->record + c->have, sizeof(kHello) - 1 - c->have, 0);
+    if (!c->greeted) {  // "NBTMIX2\n" or "NBTMIX1\n"
+      const size_t size = sizeof(kHello2) - 1;
+      const ssize_t n = recv(c->fd, c->record + c->have, size - c->have, 0);
       if (n <= 0) return drop(slot(c));
       c->have += static_cast<size_t>(n);
-      if (c->have < sizeof(kHello) - 1) return;
+      if (c->have < size) return;
+      const bool pull = !memcmp(c->record, kHello2, size);
+      if (!pull && memcmp(c->record, kHello1, size)) return drop(slot(c));
       char reply[32];
-      const int length = snprintf(reply, sizeof(reply), "NBTMIX1 %d\n", kMixRate);
-      if (memcmp(c->record, kHello, sizeof(kHello) - 1) ||
-          !send_all(c->fd, reply, static_cast<size_t>(length))) {
-        return drop(slot(c));
-      }
+      const int length = snprintf(reply, sizeof(reply), "NBTMIX%d %d\n", pull ? 2 : 1, kMixRate);
+      if (!send_all(c->fd, reply, static_cast<size_t>(length))) return drop(slot(c));
+      pthread_mutex_lock(&mutex_);
       c->greeted = c->route = true;
+      c->pull = pull;
       c->have = 0;
+      pthread_mutex_unlock(&mutex_);
       return;
     }
     const size_t want =
@@ -241,6 +273,7 @@ class Mixer {
   // faults on a misaligned 16-bit load).
   void push(Client* c, const uint8_t* frames, size_t count) {
     pthread_mutex_lock(&mutex_);
+    c->asked -= count < c->asked ? count : c->asked;
     for (size_t i = 0; i < count && c->used < kRingFrames; ++i, ++c->used) {
       const size_t at = (c->head + c->used) % kRingFrames;
       memcpy(&c->ring[2 * at], frames + 4 * i, 4);
@@ -248,9 +281,43 @@ class Mixer {
     pthread_mutex_unlock(&mutex_);
   }
 
-  // The device's thread. A parked client whose ring falls below the target
-  // wakes the serving loop, so each client is read as steadily as the device
-  // plays and its own render is paced the same way.
+  // Frames a version 2 client should be asked for now (under the mutex).
+  static size_t lacking(const Client* c) {
+    const size_t queued = c->used + c->asked;
+    const size_t lack = queued < kPullTarget ? kPullTarget - queued : 0;
+    return lack >= kCreditMin || (lack && !queued) ? lack : 0;
+  }
+
+  // Asks each version 2 client for what it lacks ('C', u32 LE frames).
+  void ask() {
+    for (Client*& c : clients_) {
+      if (!c || !c->greeted || !c->pull) continue;
+      pthread_mutex_lock(&mutex_);
+      const size_t lack = lacking(c);
+      pthread_mutex_unlock(&mutex_);
+      if (!lack) continue;
+      const uint8_t credit[8] = {'C',
+                                 0,
+                                 4,
+                                 0,
+                                 static_cast<uint8_t>(lack),
+                                 static_cast<uint8_t>(lack >> 8),
+                                 static_cast<uint8_t>(lack >> 16),
+                                 static_cast<uint8_t>(lack >> 24)};
+      const ssize_t n = send(c->fd, credit, sizeof(credit), MSG_NOSIGNAL | MSG_DONTWAIT);
+      if (n == static_cast<ssize_t>(sizeof(credit))) {
+        pthread_mutex_lock(&mutex_);
+        c->asked += lack;
+        pthread_mutex_unlock(&mutex_);
+      } else if (n >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) {
+        drop(c);  // a part sent breaks the stream
+      }
+    }
+  }
+
+  // The output's thread. It wakes the serving loop when a client should be
+  // asked for frames (version 2) or read again (version 1), so each client is
+  // served as steadily as the output plays.
   void render(int16_t* out, int frames) {
     bool wake = false;
     pthread_mutex_lock(&mutex_);
@@ -269,7 +336,10 @@ class Mixer {
                                                              : right);
     }
     for (Client* c : clients_) {
-      if (c && c->parked && c->used < kTargetFrames) {
+      if (!c || !c->greeted) continue;
+      if (c->pull) {
+        wake = wake || lacking(c);
+      } else if (c->parked && c->used < kPushTarget) {
         c->parked = false;
         wake = true;
       }
@@ -310,7 +380,8 @@ class Mixer {
   }
 
   // Tests: the device's stand-in. Its own thread takes a fragment each time
-  // the device would, at the mixer's rate, and writes it to the file.
+  // the device would, at the mixer's rate, and writes it to the file; the
+  // time of its first frame goes to <file>.t0.
   bool start_capture() {
     capture_stop_ = false;
     return pthread_create(&capture_thread_, NULL, &Mixer::capture_entry, this) == 0;
@@ -323,11 +394,18 @@ class Mixer {
 
   void capture_loop() {
     int16_t buf[2 * kAudioFragFrames];
-    const uint64_t started = monotonic_ms();
+    const uint64_t started = monotonic_us();
+    char path[512];
+    snprintf(path, sizeof(path), "%s.t0", capture_path_);
+    FILE* t0 = fopen(path, "w");
+    if (t0) {
+      fprintf(t0, "%llu\n", static_cast<unsigned long long>(started));
+      fclose(t0);
+    }
     uint64_t produced = 0;
     while (!capture_stop_) {
-      if ((produced + kAudioFragFrames) * 1000 > (monotonic_ms() - started) * kMixRate) {
-        usleep(1000);
+      if ((produced + kAudioFragFrames) * 1000000u > (monotonic_us() - started) * kMixRate) {
+        usleep(500);
         continue;
       }
       render(buf, kAudioFragFrames);
@@ -342,16 +420,14 @@ class Mixer {
   Client* clients_[kMixClientsMax];
   AudioPcm out_;
   bool device_open_, route_;
+  const char* capture_path_;
   FILE* capture_;
   pthread_t capture_thread_;
   volatile bool capture_stop_;
 };
 
-}  // namespace
-
-int mix_connect(const char* address, int* rate) {
-  struct sockaddr_in where;
-  if (!parse_address(address, &where) || !rate) return -1;
+// One connection, greeted in `version`: the socket, or -1.
+int connect_version(const struct sockaddr_in& where, int version, int* rate) {
   const int fd = socket(AF_INET, SOCK_STREAM, 0);
   const int buffer = kSocketBuffer, on = 1;  // little latency between the application and the mix
   if (fd < 0) return -1;
@@ -359,8 +435,9 @@ int mix_connect(const char* address, int* rate) {
   (void)setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &on, sizeof(on));
   char reply[32];
   size_t have = 0;
-  if (connect(fd, reinterpret_cast<struct sockaddr*>(&where), sizeof(where)) ||
-      !send_all(fd, kHello, sizeof(kHello) - 1)) {
+  const char* hello = version == 2 ? kHello2 : kHello1;
+  if (connect(fd, reinterpret_cast<const struct sockaddr*>(&where), sizeof(where)) ||
+      !send_all(fd, hello, sizeof(kHello1) - 1)) {
     close(fd);
     return -1;
   }
@@ -374,13 +451,29 @@ int mix_connect(const char* address, int* rate) {
     have += static_cast<size_t>(n);
   }
   reply[have] = 0;
-  int value = 0;
-  if (sscanf(reply, "NBTMIX1 %d\n", &value) != 1 || value < 8000 || value > 48000) {
+  int agreed = 0, value = 0;
+  if (sscanf(reply, "NBTMIX%d %d\n", &agreed, &value) != 2 || agreed != version || value < 8000 ||
+      value > 48000) {
     close(fd);
     return -1;
   }
   *rate = value;
   return fd;
+}
+
+}  // namespace
+
+// Version 2 first when asked; a mixer of an older SDK closes on its greeting,
+// and version 1 follows.
+int mix_connect(const char* address, int* rate, bool* pull) {
+  struct sockaddr_in where;
+  if (!parse_address(address, &where) || !rate || !pull) return -1;
+  if (*pull) {
+    const int fd = connect_version(where, 2, rate);
+    if (fd >= 0) return fd;
+    *pull = false;
+  }
+  return connect_version(where, 1, rate);
 }
 
 // One send per record: a header sent alone would wait for its ACK (Nagle).

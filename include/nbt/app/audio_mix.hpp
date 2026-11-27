@@ -54,7 +54,19 @@ MixLevel mix_level(int level);
 /* The state file: NBT_MIX_STATE, else /dev/shmem/nbt-mixer-level on the head
  * unit (gone when it restarts), else none (NULL). */
 const char* mix_state_path();
-/* The level in the state file, 0 without one; and writing it. */
+/* The state file's one line, "<level> <gaps> <grown>": the output's level,
+ * the gaps it has played and the times a client's queue was made longer,
+ * both counted on from what the file held when the mixer started. The mixer
+ * writes it when it starts and whenever one of them changes, so another
+ * process can tell how the sound went (NBT Manager's self test). */
+struct MixState {
+  int level;
+  unsigned gaps, grown;
+};
+/* What the state file holds; zeros without one or for what it lacks. */
+MixState mix_state_load();
+void mix_state_save(const MixState& state);
+/* The level alone. */
 int mix_state_read();
 void mix_state_write(int level);
 

@@ -1455,19 +1455,28 @@ static void test_audio_mix_levels() {
   CHECK(nbt::app::mix_state_read() == 0);  // empty
   nbt::app::mix_state_write(2);
   CHECK(nbt::app::mix_state_read() == 2);
+  const nbt::app::MixState counted = {1, 7, 3};
+  nbt::app::mix_state_save(counted);
+  nbt::app::MixState back = nbt::app::mix_state_load();
+  CHECK(back.level == 1 && back.gaps == 7 && back.grown == 3);
+  nbt::app::mix_state_write(2);  // the level alone: the counts stay
+  back = nbt::app::mix_state_load();
+  CHECK(back.level == 2 && back.gaps == 7 && back.grown == 3);
   FILE* out = fopen(state, "w");
   CHECK(out != NULL);
-  fputs("17\n", out);  // no such level
+  fputs("17\n", out);  // no such level, a file of an SDK before the counts
   fclose(out);
   CHECK(nbt::app::mix_state_read() == 0);
+  back = nbt::app::mix_state_load();
+  CHECK(back.level == 0 && back.gaps == 0 && back.grown == 0);
   unlink(state);
   unsetenv("NBT_MIX_STATE");
   g_tests_run++;
 }
 
-/* The mixer's level after a client played `play_ms` through an A2I output
+/* The mixer's state after a client played `play_ms` through an A2I output
  * that stands still for 12 ms every `gap_ms` (never: NULL). */
-static int mix_level_after(const char* gap_ms, unsigned play_ms) {
+static nbt::app::MixState mix_state_after(const char* gap_ms, unsigned play_ms) {
   const char* fake = getenv("NBT_TEST_FAKE_A2I");
   CHECK(fake && fake[0]);
   char state[] = "/tmp/nbt-mix-state-XXXXXX";
@@ -1507,7 +1516,10 @@ static int mix_level_after(const char* gap_ms, unsigned play_ms) {
   int status = -1;
   CHECK(waitpid(mixer, &status, 0) == mixer && WIFEXITED(status) && WEXITSTATUS(status) == 0);
   setenv("NBT_MIX_STATE", state, 1);
-  const int result = nbt::app::mix_state_read();
+  FILE* in = fopen(state, "r");  // written from the start, gaps or not
+  CHECK(in != NULL && fgetc(in) != EOF);
+  if (in) fclose(in);
+  const nbt::app::MixState result = nbt::app::mix_state_load();
   unsetenv("NBT_MIX_STATE");
   unlink(state);
   return result;
@@ -1516,8 +1528,10 @@ static int mix_level_after(const char* gap_ms, unsigned play_ms) {
 /* An output that plays on keeps the first level; one that keeps playing gaps
  * gets the next, kept in the state file. */
 static void test_audio_mix_steps() {
-  CHECK(mix_level_after(NULL, 4500) == 0);
-  CHECK(mix_level_after("400", 6500) == 1);
+  const nbt::app::MixState steady = mix_state_after(NULL, 4500);
+  CHECK(steady.level == 0 && steady.gaps == 0 && steady.grown == 0);
+  const nbt::app::MixState gaps = mix_state_after("400", 6500);
+  CHECK(gaps.level == 1 && gaps.gaps >= 3);
   g_tests_run++;
 }
 

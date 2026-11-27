@@ -104,6 +104,8 @@ class Mixer {
       : device_open_(false),
         route_(false),
         level_(0),
+        grown_(0),
+        grown_saved_(0),
         stalls_seen_(0),
         stall_count_(0),
         capture_path_(NULL),
@@ -148,7 +150,9 @@ class Mixer {
       return 1;
     }
     audio_thread_priority();  // asks and reads on the output's time
-    level_ = mix_state_read();
+    state_ = mix_state_load();
+    level_ = state_.level;
+    mix_state_save(state_);  // there from the start, for who reads it
     log_info("mixer: serving %s, output level %d", address, level_);
     uint64_t alone_since = monotonic_ms();
     while (true) {
@@ -342,6 +346,7 @@ class Mixer {
         c->starved = 0;
         if (c->target < static_cast<size_t>(kPullFragsMax * kMixFragFrames)) {
           c->target += kMixFragFrames;
+          ++grown_;
         }
       }
     }
@@ -380,6 +385,15 @@ class Mixer {
     bool route = false;
     for (const Client* c : clients_) route = route || (c && c->greeted && c->route);
     if (device_open_ && !capture_) watch_stalls(route);
+    pthread_mutex_lock(&mutex_);
+    const unsigned grown = grown_;
+    pthread_mutex_unlock(&mutex_);
+    if (grown != grown_saved_) {
+      state_.grown += grown - grown_saved_;
+      grown_saved_ = grown;
+      mix_state_save(state_);
+      log_info("mixer: a client's queue made longer (%u so far)", state_.grown);
+    }
     if (anyone && !device_open_) {
       device_open_ = capture_ ? start_capture() : open_output(route);
       route_ = route;
@@ -412,11 +426,14 @@ class Mixer {
     for (; stalls_seen_ != stalls; ++stalls_seen_) {
       stall_ms_[stall_count_ % kMixStallsToStep] = now;
       ++stall_count_;
+      ++state_.gaps;
     }
-    if (stall_count_ < kMixStallsToStep || level_ + 1 >= kMixLevels) return;
-    if (now - stall_ms_[stall_count_ % kMixStallsToStep] > kMixStallWindowMs) return;
-    ++level_;
-    mix_state_write(level_);
+    const bool step = stall_count_ >= kMixStallsToStep && level_ + 1 < kMixLevels &&
+                      now - stall_ms_[stall_count_ % kMixStallsToStep] <= kMixStallWindowMs;
+    if (step) state_.level = ++level_;
+    mix_state_save(state_);
+    log_info("mixer: the output played a gap (%u so far)", state_.gaps);
+    if (!step) return;
     log_info("mixer: the output played gaps, level %d from now on", level_);
     out_.close();
     device_open_ = open_output(route);
@@ -476,6 +493,8 @@ class Mixer {
   AudioPcm out_;
   bool device_open_, route_;
   int level_;
+  MixState state_;                 // what the state file holds
+  unsigned grown_, grown_saved_;   // clients' queues made longer (grown_: under the mutex)
   unsigned stalls_seen_, stall_count_;
   uint64_t stall_ms_[kMixStallsToStep];  // the last gaps' times, a ring
   const char* capture_path_;
@@ -560,23 +579,36 @@ const char* mix_state_path() {
 #endif
 }
 
-int mix_state_read() {
+MixState mix_state_load() {
   const char* path = mix_state_path();
   FILE* in = path ? fopen(path, "r") : NULL;
-  int level = 0;
+  MixState state = {0, 0, 0};
   if (in) {
-    if (fscanf(in, "%d", &level) != 1 || level < 0 || level >= kMixLevels) level = 0;
+    const int fields = fscanf(in, "%d %u %u", &state.level, &state.gaps, &state.grown);
+    if (fields < 1 || state.level < 0 || state.level >= kMixLevels) state.level = 0;
+    if (fields < 2) state.gaps = 0;
+    if (fields < 3) state.grown = 0;
     fclose(in);
   }
-  return level;
+  return state;
 }
 
-void mix_state_write(int level) {
+void mix_state_save(const MixState& state) {
   const char* path = mix_state_path();
   FILE* out = path ? fopen(path, "w") : NULL;
   if (!out) return;
-  fprintf(out, "%d\n", level);
+  fprintf(out, "%d %u %u\n", state.level, state.gaps, state.grown);
   fclose(out);
+}
+
+int mix_state_read() {
+  return mix_state_load().level;
+}
+
+void mix_state_write(int level) {
+  MixState state = mix_state_load();
+  state.level = level;
+  mix_state_save(state);
 }
 
 int mix_serve(const char* address, unsigned idle_ms) {

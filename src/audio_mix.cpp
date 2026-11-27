@@ -64,20 +64,24 @@ uint64_t monotonic_us() {
 }
 
 // What waits for the output, per client:
-//   version 2 (pull)  kPullTarget (23 ms) queued or asked for; the mixer asks
-//                     for what is missing, kCreditMin frames at least
+//   version 2 (pull)  its target queued or asked for: kPullFrags fragments
+//                     (11.6 ms), one more each time it starved, kPullFragsMax
+//                     at most; the mixer asks for what is missing, kCreditMin
+//                     frames at least
 //   version 1 (push)  its ring topped up to kPushTarget (46 ms) each time the
 //                     output takes from it, plus what waits in its socket
-// The output itself holds kOutputFrags fragments (35 ms).
+// The output itself queues what its level says (mix_level).
 enum {
   kRingFrames = 8192,
-  kPullTarget = 1024,
-  kCreditMin = 256,
+  kPullFrags = 2,
+  kPullFragsMax = 4,
+  kCreditMin = kMixFragFrames / 2,
   kPushTarget = 2048,
   kSocketBuffer = 4096,
-  kOutputFrags = 3,
   kIdleCloseMs = 3000,
 };
+
+const MixLevel kLevels[kMixLevels] = {{2, 3}, {3, 4}, {6, 8}, {10, 16}};
 
 // One client: the record being read, then its frames waiting to be played.
 // `parked`: a version 1 client the serving loop does not read (ring full).
@@ -89,6 +93,9 @@ struct Client {
   int16_t ring[kRingFrames * 2];
   size_t head, used;  // frames
   size_t asked;       // version 2: asked for, not yet received
+  size_t target;      // version 2: frames to keep queued or asked for
+  bool played;        // the output has taken frames of it
+  unsigned starved;   // version 2: times the output found it empty since
 };
 
 class Mixer {
@@ -96,6 +103,9 @@ class Mixer {
   Mixer()
       : device_open_(false),
         route_(false),
+        level_(0),
+        stalls_seen_(0),
+        stall_count_(0),
         capture_path_(NULL),
         capture_(NULL),
         capture_stop_(false) {
@@ -138,8 +148,8 @@ class Mixer {
       return 1;
     }
     audio_thread_priority();  // asks and reads on the output's time
-    out_.set_buffer_frags(kOutputFrags);
-    log_info("mixer: serving %s", address);
+    level_ = mix_state_read();
+    log_info("mixer: serving %s, output level %d", address, level_);
     uint64_t alone_since = monotonic_ms();
     while (true) {
       struct pollfd fds[2 + kMixClientsMax];
@@ -248,6 +258,7 @@ class Mixer {
       pthread_mutex_lock(&mutex_);
       c->greeted = c->route = true;
       c->pull = pull;
+      c->target = kPullFrags * kMixFragFrames;
       c->have = 0;
       pthread_mutex_unlock(&mutex_);
       return;
@@ -284,7 +295,7 @@ class Mixer {
   // Frames a version 2 client should be asked for now (under the mutex).
   static size_t lacking(const Client* c) {
     const size_t queued = c->used + c->asked;
-    const size_t lack = queued < kPullTarget ? kPullTarget - queued : 0;
+    const size_t lack = queued < c->target ? c->target - queued : 0;
     return lack >= kCreditMin || (lack && !queued) ? lack : 0;
   }
 
@@ -321,6 +332,19 @@ class Mixer {
   void render(int16_t* out, int frames) {
     bool wake = false;
     pthread_mutex_lock(&mutex_);
+    // A version 2 client that has played and cannot fill this fragment left
+    // the output empty: after kMixStarvesToGrow times it is kept fuller.
+    for (Client* c : clients_) {
+      if (!c || !c->greeted || !c->pull) continue;
+      if (c->used >= static_cast<size_t>(frames)) {
+        c->played = true;
+      } else if (c->played && ++c->starved >= kMixStarvesToGrow) {
+        c->starved = 0;
+        if (c->target < static_cast<size_t>(kPullFragsMax * kMixFragFrames)) {
+          c->target += kMixFragFrames;
+        }
+      }
+    }
     for (int i = 0; i < frames; ++i) {
       int32_t left = 0, right = 0;
       for (Client* c : clients_) {
@@ -355,9 +379,9 @@ class Mixer {
   void update_output(bool anyone, uint64_t alone_ms) {
     bool route = false;
     for (const Client* c : clients_) route = route || (c && c->greeted && c->route);
+    if (device_open_ && !capture_) watch_stalls(route);
     if (anyone && !device_open_) {
-      device_open_ =
-          capture_ ? start_capture() : out_.open(kMixRate, &Mixer::render_entry, this, route);
+      device_open_ = capture_ ? start_capture() : open_output(route);
       route_ = route;
       if (!device_open_) log_info("mixer: no audio output");
     } else if (device_open_ && !anyone && alone_ms >= kIdleCloseMs) {
@@ -366,6 +390,37 @@ class Mixer {
       out_.set_route_wanted(route);
       route_ = route;
     }
+  }
+
+  bool open_output(bool route) {
+    const MixLevel level = mix_level(level_);
+    out_.set_fragment_frames(kMixFragFrames);
+    out_.set_buffer_frags(level.frags);
+    out_.set_a2i_buffers(level.a2i_buffers);
+    stalls_seen_ = 0;
+    stall_count_ = 0;
+    return out_.open(kMixRate, &Mixer::render_entry, this, route);
+  }
+
+  // The output played kMixStallsToStep gaps within kMixStallWindowMs: it
+  // queues too little for this car now. The next level, kept in the state
+  // file, at the price of a moment's silence while the output opens again.
+  void watch_stalls(bool route) {
+    const unsigned stalls = out_.stalls();
+    if (stalls == stalls_seen_) return;
+    const uint64_t now = monotonic_ms();
+    for (; stalls_seen_ != stalls; ++stalls_seen_) {
+      stall_ms_[stall_count_ % kMixStallsToStep] = now;
+      ++stall_count_;
+    }
+    if (stall_count_ < kMixStallsToStep || level_ + 1 >= kMixLevels) return;
+    if (now - stall_ms_[stall_count_ % kMixStallsToStep] > kMixStallWindowMs) return;
+    ++level_;
+    mix_state_write(level_);
+    log_info("mixer: the output played gaps, level %d from now on", level_);
+    out_.close();
+    device_open_ = open_output(route);
+    if (!device_open_) log_info("mixer: no audio output");
   }
 
   void close_output() {
@@ -393,7 +448,7 @@ class Mixer {
   }
 
   void capture_loop() {
-    int16_t buf[2 * kAudioFragFrames];
+    int16_t buf[2 * kMixFragFrames];
     const uint64_t started = monotonic_us();
     char path[512];
     snprintf(path, sizeof(path), "%s.t0", capture_path_);
@@ -404,13 +459,13 @@ class Mixer {
     }
     uint64_t produced = 0;
     while (!capture_stop_) {
-      if ((produced + kAudioFragFrames) * 1000000u > (monotonic_us() - started) * kMixRate) {
+      if ((produced + kMixFragFrames) * 1000000u > (monotonic_us() - started) * kMixRate) {
         usleep(500);
         continue;
       }
-      render(buf, kAudioFragFrames);
-      fwrite(buf, 4, kAudioFragFrames, capture_);
-      produced += kAudioFragFrames;
+      render(buf, kMixFragFrames);
+      fwrite(buf, 4, kMixFragFrames, capture_);
+      produced += kMixFragFrames;
     }
     fflush(capture_);
   }
@@ -420,6 +475,9 @@ class Mixer {
   Client* clients_[kMixClientsMax];
   AudioPcm out_;
   bool device_open_, route_;
+  int level_;
+  unsigned stalls_seen_, stall_count_;
+  uint64_t stall_ms_[kMixStallsToStep];  // the last gaps' times, a ring
   const char* capture_path_;
   FILE* capture_;
   pthread_t capture_thread_;
@@ -486,6 +544,39 @@ bool mix_send(int fd, char type, const void* data, uint16_t size) {
   record[3] = static_cast<uint8_t>(size >> 8);
   if (size) memcpy(record + 4, data, size);
   return send_all(fd, record, 4u + size);
+}
+
+MixLevel mix_level(int level) {
+  return kLevels[level < 0 ? 0 : level >= kMixLevels ? kMixLevels - 1 : level];
+}
+
+const char* mix_state_path() {
+  const char* path = getenv("NBT_MIX_STATE");
+  if (path && path[0]) return path;
+#ifdef __QNXNTO__
+  return "/dev/shmem/nbt-mixer-level";
+#else
+  return NULL;
+#endif
+}
+
+int mix_state_read() {
+  const char* path = mix_state_path();
+  FILE* in = path ? fopen(path, "r") : NULL;
+  int level = 0;
+  if (in) {
+    if (fscanf(in, "%d", &level) != 1 || level < 0 || level >= kMixLevels) level = 0;
+    fclose(in);
+  }
+  return level;
+}
+
+void mix_state_write(int level) {
+  const char* path = mix_state_path();
+  FILE* out = path ? fopen(path, "w") : NULL;
+  if (!out) return;
+  fprintf(out, "%d\n", level);
+  fclose(out);
 }
 
 int mix_serve(const char* address, unsigned idle_ms) {

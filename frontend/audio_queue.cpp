@@ -23,7 +23,20 @@ const double kMaxAdjust = 0.005;
 }  // namespace
 
 AudioQueue::AudioQueue()
-    : read_(0), count_(0), target_(0), step_(1.0), phase_(0.0), dropped_(0), starved_(0) {
+    : read_(0),
+      count_(0),
+      target_(0),
+      target_step_(0),
+      target_max_(0),
+      flowing_(false),
+      dry_(false),
+      dry_frames_(0),
+      pause_frames_(0),
+      late_(0),
+      step_(1.0),
+      phase_(0.0),
+      dropped_(0),
+      starved_(0) {
   pthread_mutex_init(&mutex_, NULL);
   memset(buffer_, 0, sizeof(buffer_));
 }
@@ -42,6 +55,14 @@ void AudioQueue::configure(double source_rate, int device_rate, unsigned latency
   target_ = static_cast<size_t>(source_rate * latency_ms / 1000.0);
   if (target_ < 64) target_ = 64;
   if (target_ > kCapacity / 2) target_ = kCapacity / 2;
+  target_step_ = target_ / 4;
+  target_max_ = static_cast<size_t>(source_rate * kLatencyMaxMs / 1000.0);
+  if (target_max_ > kCapacity / 2) target_max_ = kCapacity / 2;
+  if (target_max_ < target_) target_max_ = target_;
+  pause_frames_ = static_cast<size_t>(device_rate / 10); /* 100 ms */
+  flowing_ = dry_ = false;
+  dry_frames_ = 0;
+  late_ = 0;
   read_ = count_ = 0;
   phase_ = 0.0;
   dropped_ = starved_ = 0;
@@ -64,6 +85,15 @@ size_t AudioQueue::push(const int16_t* lr, size_t frames) {
 
 void AudioQueue::render(int16_t* out, int frames) {
   Lock lock(&mutex_);
+  if (count_ >= 2) {
+    // Frames again after a short empty spell: the loop was late.
+    if (dry_ && dry_frames_ < pause_frames_ && ++late_ >= kStarvesToGrow) {
+      late_ = 0;
+      target_ = target_ + target_step_ < target_max_ ? target_ + target_step_ : target_max_;
+    }
+    dry_ = false;
+    flowing_ = true;
+  }
   // Fuller than the target: read a little faster; emptier: a little slower.
   double adjust = target_ ? (static_cast<double>(count_) - target_) / target_ * kMaxAdjust : 0.0;
   if (adjust > kMaxAdjust) adjust = kMaxAdjust;
@@ -73,6 +103,11 @@ void AudioQueue::render(int16_t* out, int frames) {
     if (count_ < 2) {
       out[2 * i] = out[2 * i + 1] = 0;
       ++starved_;
+      if (flowing_ && !dry_) {
+        dry_ = true;
+        dry_frames_ = 0;
+      }
+      ++dry_frames_;
       continue;
     }
     const size_t a = read_, b = (read_ + 1) % kCapacity;
@@ -112,6 +147,8 @@ void AudioQueue::clear() {
   Lock lock(&mutex_);
   read_ = count_ = 0;
   phase_ = 0.0;
+  flowing_ = dry_ = false; /* a pause, not late frames */
+  dry_frames_ = 0;
 }
 
 }  // namespace frontend

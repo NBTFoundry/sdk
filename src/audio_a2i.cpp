@@ -54,7 +54,8 @@ void a2i_fill_params(A2iParams* params, const char* endpoint, int rate, int buff
   params->cookie = kA2iCookie;
   const uint64_t ms = 2000ull * static_cast<uint64_t>(buffer_bytes) *
                       static_cast<uint64_t>(buffers) / (4ull * static_cast<uint64_t>(rate));
-  params->timeout_ms = static_cast<uint32_t>(ms);
+  // Never below the media player's own (8 buffers of 2048 bytes).
+  params->timeout_ms = static_cast<uint32_t>(ms < 185 ? 185 : ms);
 }
 
 bool a2i_endpoint_valid(const char* endpoint) {

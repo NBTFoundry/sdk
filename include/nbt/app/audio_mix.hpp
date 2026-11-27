@@ -16,6 +16,9 @@
  * Version 2 (pull): the mixer asks for frames as the output plays them, so a
  * client renders them just in time:
  *   'C'  from the mixer, a u32 LE: send that many more frames
+ * The mixer keeps two of its fragments queued per version 2 client (11.6 ms),
+ * and one more each time that client left it empty kMixStarvesToGrow times
+ * (four at most).
  * Version 1 (push, an SDK before version 2): the client sends as fast as TCP
  * takes them; the mixer reads as the output plays. */
 
@@ -29,8 +32,31 @@ enum {
   kMixRate = 44100,
   kMixRecordMax = 4096,
   kMixClientsMax = 16,
-  kMixFragFrames = 512, /* a version 2 client's render: 11.6 ms */
+  kMixFragFrames = 256, /* a version 2 client's render, and the output's fragment: 5.8 ms */
+  kMixLevels = 4,
+  kMixStarvesToGrow = 3,
 };
+
+/* What the mixer's output queues, least first. The mixer starts at the level
+ * its state file holds (0 without one) and moves to the next when the output
+ * has played kMixStallsToStep gaps within kMixStallWindowMs; it writes the
+ * level to the file, so it is kept until the head unit starts again.
+ * `frags`: the device's fragments of kMixFragFrames (the head unit's
+ * libasound queues about 2 x frags - 1 of them: 17, 29, 64 and 110 ms);
+ * `a2i_buffers`: A2I's buffers of as many frames (17, 23, 46 and 93 ms). */
+struct MixLevel {
+  int frags;
+  int a2i_buffers;
+};
+enum { kMixStallsToStep = 3, kMixStallWindowMs = 30000 };
+/* Level `level`'s numbers (the last level's beyond it). */
+MixLevel mix_level(int level);
+/* The state file: NBT_MIX_STATE, else /dev/shmem/nbt-mixer-level on the head
+ * unit (gone when it restarts), else none (NULL). */
+const char* mix_state_path();
+/* The level in the state file, 0 without one; and writing it. */
+int mix_state_read();
+void mix_state_write(int level);
 
 /* Connects to the mixer at `address` ("a.b.c.d:port") within a second: the
  * socket, and the mixer's rate in *rate, or -1. `*pull` asks for version 2;

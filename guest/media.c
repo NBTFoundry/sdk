@@ -50,9 +50,11 @@ static void* audio_loop(void* arg) {
   (void)arg;
   volatile uint32_t* ctl = guest_arena;
   int16_t* ring = (int16_t*)(void*)((uint8_t*)guest_arena + NBT_AUDIO_OFF);
-  const uint32_t target = (uint32_t)audio_frag * 2; /* about two fragments queued */
   int16_t buf[2 * 1024];
   while (LOAD(&audio_running)) {
+    /* What the runner asks to keep queued; about two fragments with an older one. */
+    uint32_t target = LOAD(&ctl[NBT_AUDIO_TARGET_WORD]);
+    if (target == 0 || target > NBT_AUDIO_TARGET_MAX) target = (uint32_t)audio_frag * 2;
     const uint32_t queued = ctl[NBT_AUDIO_WRITE_WORD] - LOAD(&ctl[NBT_AUDIO_READ_WORD]);
     if (queued >= target) {
       guest_sleep_ns(2000000);
@@ -75,6 +77,8 @@ static int32_t g_audio_open(int32_t rate, nbt_audio_render_fn render, void* cont
                             int32_t* out_rate, int32_t* out_frag) {
   if (!arena_ready() || !render || LOAD(&audio_running)) return -NBT_EINVAL;
   guest_arena[NBT_AUDIO_WRITE_WORD] = guest_arena[NBT_AUDIO_READ_WORD] = 0;
+  STORE(&guest_arena[NBT_ARENA_GUEST_CAPS_WORD],
+        guest_arena[NBT_ARENA_GUEST_CAPS_WORD] | NBT_GUEST_CAP_AUDIO_TARGET);
   int32_t rf[2] = {0, 0};
   const int64_t rc = guest_call(NBT_GUEST_AUDIO_OPEN, route, rate, NULL, 0, rf, sizeof(rf));
   if (rc < 0) return (int32_t)rc;

@@ -637,6 +637,8 @@ void test_audio_a2i() {
   CHECK(p.buffer_bytes == 2048 && p.channels == 2 && p.sample_bytes == 2 && p.rate == 44100);
   CHECK(p.stereo == 1 && p.format == 0 && p.cookie == 0x05555555u && p.timeout_ms == 185);
   CHECK(!strcmp(p.endpoint, "input_stereo_0") && p.zero_20 == 0 && p.zero_2c == 0);
+  a2i_fill_params(&p, "input_stereo_0", 44100, 1024, 3); /* short buffers: the same timeout */
+  CHECK(p.buffers == 3 && p.buffer_bytes == 1024 && p.timeout_ms == 185);
   CHECK(a2i_endpoint_valid("input_stereo_0") && a2i_endpoint_valid("input_stereo_AirPlayMain"));
   CHECK(!a2i_endpoint_valid("") && !a2i_endpoint_valid(NULL) && !a2i_endpoint_valid("/input"));
   CHECK(!a2i_endpoint_valid("../x") && !a2i_endpoint_valid("a_name_that_is_far_too_long_0123"));
@@ -680,6 +682,20 @@ void test_audio_a2i() {
     CHECK(lr[2 * i] == static_cast<int16_t>(i + 1) &&
           lr[2 * i + 1] == static_cast<int16_t>(-(i + 1)));
   }
+  /* The mixer's: 256-frame buffers, three of them. */
+  {
+    AudioPcm pcm;
+    pcm.set_fragment_frames(256);
+    pcm.set_a2i_buffers(3);
+    CHECK(pcm.open(44100, ramp_render, &next, false));
+    CHECK(pcm.active() && pcm.frag_frames() == 256 && pcm.stalls() == 0);
+    usleep(50000);
+    pcm.close();
+  }
+  counts(c);
+  CHECK(c[0] == 2 && c[1] == 2 && c[2] == 2 && c[3] == 2);
+  params(&p);
+  CHECK(p.buffer_bytes == 1024 && p.buffers == 3);
   /* A name that is no io-amp input: no device. */
   setenv("NBT_AUDIO_A2I", "../input", 1);
   {
@@ -1361,9 +1377,9 @@ static void test_audio_mix_steady() {
   g_tests_run++;
 }
 
-/* From the guest's render to the output: its two fragments (23 ms) and the
- * mixer's 23 ms at most, plus a fragment's scheduling; the device's own
- * buffer comes after (35 ms on the head unit). */
+/* From the guest's render to the output: its two fragments (11.6 ms) and the
+ * mixer's 11.6 ms at most, plus a fragment's scheduling; the device's own
+ * queue comes after (17 ms on the head unit at the first level). */
 static void test_audio_mix_delay() {
   static GuestPlay play;
   play_guest(&play, 500, 1000);
@@ -1372,12 +1388,136 @@ static void test_audio_mix_delay() {
     if (play.mix[2 * i]) first = i;
   }
   CHECK(first < play.frames && play.first_write_us);
-  const uint64_t taken_us = play.t0_us + (first / nbt::app::kAudioFragFrames + 1) *
-                                             nbt::app::kAudioFragFrames * 1000000u /
+  const uint64_t taken_us = play.t0_us + (first / nbt::app::kMixFragFrames + 1) *
+                                             nbt::app::kMixFragFrames * 1000000u /
                                              nbt::app::kMixRate;
   const long delay_ms = static_cast<long>(taken_us - play.first_write_us) / 1000;
   printf("audio mix: %ld ms from a guest's render to the output\n", delay_ms);
-  CHECK(delay_ms >= 0 && delay_ms <= 60);
+  CHECK(delay_ms >= 0 && delay_ms <= 35);
+  g_tests_run++;
+}
+
+/* AudioPace: an output that plays on is never flagged, whatever the writer's
+ * jitter and the two clocks' drift; one that stood still for a fragment is,
+ * once. */
+static void test_audio_pace() {
+  nbt::app::AudioPace pace;
+  const int rate = 44100, frag = 256, queue = 3 * frag;
+  pace.reset(rate, frag);
+  // The device plays at 44100 * 1.0005 by our clock; a write returns when a
+  // fragment's room is free, up to 3 ms late (scheduling), never early.
+  uint64_t device_us = 1000;  // the device's own time, moved by gaps
+  uint64_t gap_us = 0;
+  uint64_t written = 0;
+  unsigned flagged = 0, flagged_before_gap = 0;
+  unsigned seed = 12345;
+  for (int i = 0; i < 172 * 12; ++i) {
+    if (i == 172 * 6) {
+      flagged_before_gap = flagged;
+      gap_us += 6000;  // the output stood still for 6 ms: a little over a fragment
+    }
+    // Room for this write once the device has played enough of what is queued.
+    const int64_t must_have_played = static_cast<int64_t>(written) + frag - queue;
+    uint64_t at = device_us;
+    if (must_have_played > 0) {
+      const uint64_t t = static_cast<uint64_t>(must_have_played) * 1000000u * 10000u /
+                             (static_cast<uint64_t>(rate) * 10005u) +
+                         1000 + gap_us;
+      if (t > at) at = t;
+    }
+    seed = seed * 1103515245u + 12345u;
+    device_us = at + (seed >> 16) % 3000;
+    written += frag;
+    if (pace.wrote(frag, device_us)) ++flagged;
+  }
+  CHECK(flagged_before_gap == 0);
+  CHECK(flagged == 1);
+  g_tests_run++;
+}
+
+/* The mixer's output levels and its state file. */
+static void test_audio_mix_levels() {
+  CHECK(nbt::app::mix_level(0).frags == 2 && nbt::app::mix_level(0).a2i_buffers == 3);
+  CHECK(nbt::app::mix_level(-1).frags == 2);
+  for (int i = 1; i < nbt::app::kMixLevels; ++i) {
+    CHECK(nbt::app::mix_level(i).frags > nbt::app::mix_level(i - 1).frags);
+    CHECK(nbt::app::mix_level(i).a2i_buffers > nbt::app::mix_level(i - 1).a2i_buffers);
+  }
+  CHECK(nbt::app::mix_level(99).frags == nbt::app::mix_level(nbt::app::kMixLevels - 1).frags);
+  unsetenv("NBT_MIX_STATE");
+  CHECK(nbt::app::mix_state_path() == NULL && nbt::app::mix_state_read() == 0);
+  nbt::app::mix_state_write(2);  // nowhere: nothing happens
+  char state[] = "/tmp/nbt-mix-state-XXXXXX";
+  const int fd = mkstemp(state);
+  CHECK(fd >= 0);
+  close(fd);
+  setenv("NBT_MIX_STATE", state, 1);
+  CHECK(nbt::app::mix_state_read() == 0);  // empty
+  nbt::app::mix_state_write(2);
+  CHECK(nbt::app::mix_state_read() == 2);
+  FILE* out = fopen(state, "w");
+  CHECK(out != NULL);
+  fputs("17\n", out);  // no such level
+  fclose(out);
+  CHECK(nbt::app::mix_state_read() == 0);
+  unlink(state);
+  unsetenv("NBT_MIX_STATE");
+  g_tests_run++;
+}
+
+/* The mixer's level after a client played `play_ms` through an A2I output
+ * that stands still for 12 ms every `gap_ms` (never: NULL). */
+static int mix_level_after(const char* gap_ms, unsigned play_ms) {
+  const char* fake = getenv("NBT_TEST_FAKE_A2I");
+  CHECK(fake && fake[0]);
+  char state[] = "/tmp/nbt-mix-state-XXXXXX";
+  const int state_fd = mkstemp(state);
+  CHECK(state_fd >= 0);
+  close(state_fd);
+  char address[32];
+  snprintf(address, sizeof(address), "127.0.0.1:%d", 35000 + (getpid() + play_ms) % 5000);
+  const pid_t mixer = fork();
+  CHECK(mixer >= 0);
+  if (mixer == 0) {
+    setenv("NBT_A2I_LIB", fake, 1);
+    setenv("NBT_AUDIO_A2I", "input_stereo_0", 1);
+    setenv("NBT_AUDIO_CONN", "0", 1);
+    setenv("NBT_FAKE_A2I_PACE", "1", 1);
+    if (gap_ms) setenv("NBT_FAKE_A2I_GAP_MS", gap_ms, 1);
+    setenv("NBT_MIX_STATE", state, 1);
+    _exit(nbt::app::mix_serve(address, 300));
+  }
+  setenv("NBT_AUDIO_MIXER", address, 1);
+  int16_t level = 500;
+  {
+    nbt::app::AudioPcm pcm;
+    bool open = false;
+    for (int i = 0; i < 100 && !open; ++i) {  // until it listens
+      open = pcm.open(44100, constant_render, &level, true) && pcm.frag_frames() == 256;
+      if (!open) {
+        pcm.close();
+        usleep(20000);
+      }
+    }
+    CHECK(open);
+    usleep(play_ms * 1000);
+    pcm.close();
+  }
+  unsetenv("NBT_AUDIO_MIXER");
+  int status = -1;
+  CHECK(waitpid(mixer, &status, 0) == mixer && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  setenv("NBT_MIX_STATE", state, 1);
+  const int result = nbt::app::mix_state_read();
+  unsetenv("NBT_MIX_STATE");
+  unlink(state);
+  return result;
+}
+
+/* An output that plays on keeps the first level; one that keeps playing gaps
+ * gets the next, kept in the state file. */
+static void test_audio_mix_steps() {
+  CHECK(mix_level_after(NULL, 4500) == 0);
+  CHECK(mix_level_after("400", 6500) == 1);
   g_tests_run++;
 }
 
@@ -1385,6 +1525,9 @@ int main() {
   test_audio_mix();
   test_audio_mix_steady();
   test_audio_mix_delay();
+  test_audio_pace();
+  test_audio_mix_levels();
+  test_audio_mix_steps();
   test_gles2_matrix_and_batch();
   test_readers();
   test_input_mixer();

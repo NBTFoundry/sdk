@@ -51,8 +51,18 @@ enum nbt_arena_word {
   NBT_ARENA_RUNNER_VERSION_WORD = 2, /* runner: its NBT_GUEST_PROTO_VERSION */
   NBT_ARENA_GUEST_VERSION_WORD = 3,  /* guest: its NBT_GUEST_PROTO_VERSION */
   NBT_AUDIO_WRITE_WORD = 4,          /* guest: frames written, wraps */
-  NBT_AUDIO_READ_WORD = 5            /* runner: frames read, wraps */
+  NBT_AUDIO_READ_WORD = 5,           /* runner: frames read, wraps */
+  NBT_ARENA_GUEST_CAPS_WORD = 6,     /* guest: NBT_GUEST_CAP_* it follows (0: an older guest) */
+  NBT_AUDIO_TARGET_WORD = 7          /* runner: frames to keep in the ring (0: an older runner) */
 };
+
+/* NBT_ARENA_GUEST_CAPS_WORD.
+ * AUDIO_TARGET: the guest keeps NBT_AUDIO_TARGET_WORD frames in the audio
+ * ring and follows the word as it changes: the runner starts with two of its
+ * fragments and raises it when the ring ran empty. A guest without it keeps
+ * twice the fragment NBT_GUEST_AUDIO_OPEN answered, for as long as it plays. */
+#define NBT_GUEST_CAP_AUDIO_TARGET 1u
+#define NBT_AUDIO_TARGET_MAX 4096u
 
 enum nbt_guest_op {
   NBT_GUEST_OUTPUT = 1, /* a = fd (1 or 2); payload: bytes */

@@ -26,7 +26,7 @@ struct A2iParams {
   uint32_t zero_2c;
   uint32_t format;     /* 0: 16-bit */
   uint32_t cookie;     /* 0x05555555 */
-  uint32_t timeout_ms; /* twice the whole buffer's duration */
+  uint32_t timeout_ms; /* twice the whole buffer's duration, 185 at least */
   uint32_t reserved[5];
 };
 

@@ -23,6 +23,15 @@
 static volatile uint8_t* g_arena;
 static int g_gl_loaded;
 
+/* What the guest keeps in its ring: two of the output's fragments, and one
+ * more each time the ring ran empty RING_SHORT_TO_GROW times while it played
+ * (the guest's audio thread came late), RING_FRAGS_MAX at most. A guest
+ * without NBT_GUEST_CAP_AUDIO_TARGET cannot follow: it is told a fragment of
+ * RING_OLD_GUEST_FRAG frames at least and keeps twice that. */
+enum { RING_FRAGS = 2, RING_FRAGS_MAX = 4, RING_SHORT_TO_GROW = 3, RING_OLD_GUEST_FRAG = 512 };
+static uint32_t g_ring_frag, g_ring_short;
+static int g_ring_follows, g_ring_played;
+
 /* The runner's playback thread: drains the guest's ring (silence when it is
  * behind). Indices are the guest's to write: bounded here. */
 static void ring_render(void* context, int16_t* out, int32_t frames) {
@@ -31,6 +40,14 @@ static void ring_render(void* context, int16_t* out, int32_t frames) {
   uint32_t rd = ctl[NBT_AUDIO_READ_WORD];
   uint32_t avail = __atomic_load_n(&ctl[NBT_AUDIO_WRITE_WORD], __ATOMIC_ACQUIRE) - rd;
   if (avail > NBT_AUDIO_FRAMES) avail = 0; /* nonsense from the guest: play silence */
+  if (avail >= (uint32_t)frames) {
+    g_ring_played = 1;
+  } else if (g_ring_played && g_ring_follows && ++g_ring_short >= RING_SHORT_TO_GROW) {
+    const uint32_t target = ctl[NBT_AUDIO_TARGET_WORD];
+    g_ring_short = 0;
+    if (g_ring_frag && target < RING_FRAGS_MAX * g_ring_frag)
+      __atomic_store_n(&ctl[NBT_AUDIO_TARGET_WORD], target + g_ring_frag, __ATOMIC_RELEASE);
+  }
   for (int32_t i = 0; i < frames; ++i) {
     if ((uint32_t)i < avail) {
       out[2 * i] = ring[2 * (rd % NBT_AUDIO_FRAMES)];
@@ -196,8 +213,24 @@ static void serve(const nbt_host_v1* H, int rcvid, int len) {
     case NBT_GUEST_AUDIO_OPEN:
       if (NBT_HOST_HAS(H, audio_open)) {
         int32_t rf[2] = {0, 0};
-        ((volatile uint32_t*)g_arena)[NBT_AUDIO_READ_WORD] = 0;
+        volatile uint32_t* ctl = (volatile uint32_t*)g_arena;
+        ctl[NBT_AUDIO_READ_WORD] = 0;
+        ctl[NBT_AUDIO_TARGET_WORD] = 0;
+        g_ring_follows = (ctl[NBT_ARENA_GUEST_CAPS_WORD] & NBT_GUEST_CAP_AUDIO_TARGET) != 0;
+        g_ring_played = 0;
+        g_ring_short = 0;
+        g_ring_frag = 0;
         rep.result = H->audio_open(req->b, ring_render, (void*)g_arena, req->a, &rf[0], &rf[1]);
+        if (rep.result >= 0 && rf[1] > 0) {
+          g_ring_frag = (uint32_t)rf[1];
+          if (g_ring_follows) {
+            uint32_t target = RING_FRAGS * g_ring_frag;
+            if (target > NBT_AUDIO_TARGET_MAX) target = NBT_AUDIO_TARGET_MAX;
+            __atomic_store_n(&ctl[NBT_AUDIO_TARGET_WORD], target, __ATOMIC_RELEASE);
+          } else if (rf[1] < RING_OLD_GUEST_FRAG) {
+            rf[1] = RING_OLD_GUEST_FRAG;
+          }
+        }
         out_len = reply_with(rf, sizeof(rf));
       }
       break;

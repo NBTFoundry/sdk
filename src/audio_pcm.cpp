@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #ifdef __QNXNTO__
@@ -89,6 +90,7 @@ bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, boo
   render_ = render;
   render_context_ = context;
   stop_requested_ = false;
+  stalls_ = 0;
   g_pcm_open = true;
   owner_ = true;
   mix_route_ = route_wanted;
@@ -96,10 +98,15 @@ bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, boo
   if (open_mixer()) {
     // The mixer owns the device and the audio connection.
   } else if (a2i && a2i[0]) {
+    // A2I takes buffers of a power of two of bytes.
+    const bool sized =
+        frag_wanted_ >= 8 && frag_wanted_ <= 2048 && !(frag_wanted_ & (frag_wanted_ - 1));
+    const int bytes = sized ? frag_wanted_ * 4 : kA2iBufferBytes;
+    const int buffers = a2i_buffers_ > 0 && a2i_buffers_ <= 256 ? a2i_buffers_ : kA2iBuffers;
     sample_rate_ = kA2iRate;
-    frag_frames_ = kA2iBufferBytes / 4;
+    frag_frames_ = bytes / 4;
     a2i_ = new (std::nothrow) A2iOutput;
-    if (!a2i_ || !a2i_->open(a2i, kA2iRate, kA2iBufferBytes, kA2iBuffers)) {
+    if (!a2i_ || !a2i_->open(a2i, kA2iRate, bytes, buffers)) {
       close_device();
       return false;
     }
@@ -107,6 +114,7 @@ bool AudioPcm::open(int preferred_rate, AudioRenderFn render, void* context, boo
     close_device();
     return false;
   }
+  pace_.reset(sample_rate_, frag_frames_);
   if (pthread_create(&thread_, NULL, &AudioPcm::thread_entry, this) != 0) {
     close_device();
     return false;
@@ -205,7 +213,7 @@ bool AudioPcm::open_device() {
   pcm_handle_ = pcm;
 
   int rate = sample_rate_;
-  int frag_bytes = kAudioFragFrames * 4;
+  int frag_bytes = (frag_wanted_ > 0 ? frag_wanted_ : kAudioFragFrames) * 4;
   if (g_audio_api.plugin_info) {
     snd_pcm_channel_info_t info;
     memset(&info, 0, sizeof(info));
@@ -359,6 +367,7 @@ void AudioPcm::playback_loop() {
     const size_t bytes = static_cast<size_t>(frames) * 4u;
     ssize_t written = g_audio_api.plugin_write(pcm, buf, bytes);
     if (written == static_cast<ssize_t>(bytes)) {
+      paced(frames);
       consecutive_errors = 0;
       if (++writes_ok == 1) {
         log_debug("qnx audio first write ok bytes=%u", static_cast<unsigned>(bytes));
@@ -400,6 +409,7 @@ void AudioPcm::playback_loop() {
     }
 #else
     long rc = g_audio_api.writei(pcm_handle_, buf, static_cast<unsigned long>(frames));
+    if (rc >= 0) paced(frames);
     if (rc < 0 && !stop_requested_) {
       if (g_audio_api.recover) {
         g_audio_api.recover(pcm_handle_, static_cast<int>(rc), 1);
@@ -468,6 +478,16 @@ void AudioPcm::mix_pull_loop(int16_t* buf, int frames) {
   if (!stop_requested_) log_info("audio: the mixer is gone");
 }
 
+void AudioPcm::paced(int frames) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return;
+  const uint64_t us =
+      static_cast<uint64_t>(now.tv_sec) * 1000000u + static_cast<uint64_t>(now.tv_nsec) / 1000u;
+  if (!pace_.wrote(frames, us)) return;
+  ++stalls_;
+  log_debug("audio: the output played a gap (%u so far)", stalls_);
+}
+
 void audio_thread_priority() {
 #ifdef __QNXNTO__
   struct sched_param param;
@@ -478,7 +498,7 @@ void audio_thread_priority() {
   memset(&param, 0, sizeof(param));
   param.sched_priority = kAudioPriority;
   param.sched_ss_low_priority = own;
-  param.sched_ss_max_repl = 8;
+  param.sched_ss_max_repl = kAudioBlocksMax;
   param.sched_ss_repl_period.tv_nsec = kAudioPeriodMs * 1000000L;
   param.sched_ss_init_budget.tv_nsec = kAudioBudgetMs * 1000000L;
   const int rc = pthread_setschedparam(pthread_self(), SCHED_SPORADIC, &param);
@@ -496,6 +516,7 @@ void AudioPcm::a2i_loop(int16_t* buf, int frames) {
   while (!stop_requested_) {
     render_(render_context_, buf, frames);
     if (a2i_->write(buf, frames)) {
+      paced(frames);
       failures = 0;
       continue;
     }

@@ -136,6 +136,7 @@ Applications and the runner are built and shipped apart: a payload keeps working
   - Minor versions only append members to `nbt_host_v1`. Code checks a member newer than v1.0 with `NBT_HOST_HAS(host, member)` before calling it (`NBT_HAS(member)` inside the module runtime).
 - **Guest protocol** (`include/nbt/guest_proto.h`):
   - Covers the messages, the shared arena and the GL stream. Ops, arena words and GL commands are only ever added; an unknown op answers `-NBT_ENOSYS`.
+  - A guest names what it follows in the arena's `NBT_ARENA_GUEST_CAPS_WORD`. With `NBT_GUEST_CAP_AUDIO_TARGET` the runner sets how many frames the guest keeps in the audio ring (two of its fragments, more once the ring ran empty); an older guest keeps twice the fragment it was told.
   - A change an older guest couldn't follow raises `NBT_GUEST_PROTO_VERSION`. The runner writes its version into the arena, and the guest refuses to start under an older runner.
 - **GL stream ids** come from OpenGL ES 2.0 sorted by name (`tools/glregistry.py`). That set is frozen, so an id never changes.
 

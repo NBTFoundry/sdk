@@ -4,9 +4,14 @@
 #include "nbt/app/audio_pcm.hpp"
 
 #include <stddef.h>
+#include <stdint.h>
 
 namespace nbt {
 namespace app {
+
+namespace {
+const int64_t kNoBest = -(static_cast<int64_t>(1) << 62);
+}
 
 AudioPcm::AudioPcm()
     : render_(NULL),
@@ -23,7 +28,45 @@ AudioPcm::AudioPcm()
       mix_fd_(-1),
       mix_pull_(false),
       mix_route_(false),
-      frags_(0) {}
+      frags_(0),
+      frag_wanted_(0),
+      a2i_buffers_(0),
+      stalls_(0) {}
+
+void AudioPace::reset(int rate, int frag_frames) {
+  rate_ = rate > 0 ? rate : 44100;
+  frag_ = frag_frames > 0 ? frag_frames : 512;
+  started_ = have_reference_ = false;
+  start_us_ = window_end_us_ = written_ = 0;
+  best_ = reference_ = 0;
+  windows_ = 0;
+}
+
+bool AudioPace::wrote(int frames, uint64_t now_us) {
+  if (frames <= 0) return false;
+  if (!started_) {
+    started_ = true;
+    start_us_ = now_us;
+    window_end_us_ = now_us + 1000000u;
+    best_ = kNoBest;
+  }
+  written_ += static_cast<uint64_t>(frames);
+  const int64_t played =
+      static_cast<int64_t>((now_us - start_us_) * static_cast<uint64_t>(rate_) / 1000000u);
+  const int64_t ahead = static_cast<int64_t>(written_) - played;
+  if (ahead > best_) best_ = ahead;
+  if (now_us < window_end_us_) return false;
+  // The first second holds the fill before playback started: not compared.
+  bool gap = false;
+  if (++windows_ >= 2) {
+    gap = have_reference_ && best_ < reference_ - frag_ / 2;
+    reference_ = best_;
+    have_reference_ = true;
+  }
+  best_ = kNoBest;
+  window_end_us_ = now_us + 1000000u;
+  return gap;
+}
 
 AudioPcm::~AudioPcm() {
   close();

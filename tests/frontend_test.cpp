@@ -70,6 +70,34 @@ void test_audio_queue() {
   CHECK(q->push(big, AudioQueue::kCapacity) == AudioQueue::kCapacity);
   CHECK(q->push(in, 10) == 0 && q->dropped() == 10);
   delete[] big;
+  /* The default: 32 ms. Frames that come late three times: a quarter more,
+   * up to 64 ms; a pause (100 ms empty, or clear) does not count. */
+  q->configure(32000.0, 32000);
+  CHECK(q->target() == 1024);
+  for (int round = 0; round < 3; ++round) {
+    CHECK(q->target() == 1024);
+    CHECK(q->push(in, 300) == 300);
+    q->render(out, 600); /* what is queued, then empty */
+    CHECK(q->push(in, 300) == 300);
+    q->render(out, 100); /* frames again: it was late */
+  }
+  CHECK(q->target() == 1280);
+  q->clear();
+  for (int round = 0; round < 4; ++round) { /* pauses */
+    CHECK(q->push(in, 300) == 300);
+    q->render(out, 400);
+    for (int i = 0; i < 6; ++i) q->render(out, 600); /* 112 ms empty */
+    CHECK(q->push(in, 300) == 300);
+    q->render(out, 100);
+    q->clear();
+    q->render(out, 100);
+  }
+  CHECK(q->target() == 1280);
+  for (int round = 0; round < 40; ++round) { /* never beyond 64 ms */
+    CHECK(q->push(in, 300) == 300);
+    q->render(out, 400);
+  }
+  CHECK(q->target() == 2048);
   delete q;
   ++g_suites;
 }

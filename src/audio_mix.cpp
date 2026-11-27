@@ -29,6 +29,10 @@ namespace {
 
 const char kHello1[] = "NBTMIX1\n";
 const char kHello2[] = "NBTMIX2\n";
+// From the manager, when applications' audio connection changed: a mixer
+// nobody plays through ends at once ("NBTMIXE 1\n"), so that the next
+// application starts one with the new connection; a busy one stays ("0").
+const char kHelloEnd[] = "NBTMIXE\n";
 
 bool parse_address(const char* text, struct sockaddr_in* out) {
   char host[32];
@@ -188,10 +192,14 @@ class Mixer {
       if (anyone) alone_since = now;
       update_output(anyone, now - alone_since);
       ask();
-      if (!anyone && now - alone_since >= idle_ms) break;
+      if (ending_ || (!anyone && now - alone_since >= idle_ms)) break;
     }
     close(listener);
-    log_info("mixer: no client for %u ms, ending", idle_ms);
+    if (ending_) {
+      log_info("mixer: asked to end");
+    } else {
+      log_info("mixer: no client for %u ms, ending", idle_ms);
+    }
     return 0;
   }
 
@@ -254,6 +262,13 @@ class Mixer {
       if (n <= 0) return drop(slot(c));
       c->have += static_cast<size_t>(n);
       if (c->have < size) return;
+      if (!memcmp(c->record, kHelloEnd, size)) {
+        bool busy = false;
+        for (const Client* other : clients_) busy = busy || (other && other != c && other->greeted);
+        (void)send_all(c->fd, busy ? "NBTMIXE 0\n" : "NBTMIXE 1\n", 10);
+        ending_ = !busy;
+        return drop(slot(c));
+      }
       const bool pull = !memcmp(c->record, kHello2, size);
       if (!pull && memcmp(c->record, kHello1, size)) return drop(slot(c));
       char reply[32];
@@ -492,9 +507,10 @@ class Mixer {
   Client* clients_[kMixClientsMax];
   AudioPcm out_;
   bool device_open_, route_;
+  bool ending_ = false;
   int level_;
-  MixState state_;                 // what the state file holds
-  unsigned grown_, grown_saved_;   // clients' queues made longer (grown_: under the mutex)
+  MixState state_;                // what the state file holds
+  unsigned grown_, grown_saved_;  // clients' queues made longer (grown_: under the mutex)
   unsigned stalls_seen_, stall_count_;
   uint64_t stall_ms_[kMixStallsToStep];  // the last gaps' times, a ring
   const char* capture_path_;

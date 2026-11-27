@@ -15,7 +15,8 @@ namespace app {
  * plays into). A worker thread runs at most one audioconn at a time, with
  * LD_PRELOAD removed so the child does not load the HMI's graphics stack.
  * NBT_AUDIO_CONN overrides the connection (0 disables routing) and
- * NBT_AUDIOCONN the audioconn binary. */
+ * NBT_AUDIOCONN the audioconn binary. NBT_AUDIO_ROUTE_NOTE names a file the
+ * connection is noted in while it is built, for the manager. */
 class AudioRoute {
  public:
   AudioRoute();

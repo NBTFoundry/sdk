@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -794,6 +795,10 @@ void test_audio_route() {
 
   setenv("NBT_AUDIOCONN", script_path, 1);
   setenv("LD_PRELOAD", "fake_preload.so", 1);
+  /* The manager's note: there, private, from before the build to the release. */
+  char note_path[128], note[64], expected[64];
+  snprintf(note_path, sizeof(note_path), "%s/route-note", tmp_dir);
+  setenv("NBT_AUDIO_ROUTE_NOTE", note_path, 1);
   AudioRoute route;
   CHECK(route.configure());
   CHECK(route.conn_id() == 0xb8u);
@@ -801,17 +806,31 @@ void test_audio_route() {
   route.set_wanted(true);
   for (int i = 0; i < 60 && !route.built(); ++i) usleep(25000);
   CHECK(route.built());
+  FILE* nf = fopen(note_path, "r");
+  CHECK(nf != NULL);
+  const size_t note_length = fread(note, 1, sizeof(note) - 1, nf);
+  fclose(nf);
+  note[note_length] = '\0';
+  snprintf(expected, sizeof(expected), "NBTROUTE1 %ld b8\n", static_cast<long>(getpid()));
+  CHECK(strcmp(note, expected) == 0);
+  struct stat note_stat;
+  CHECK(stat(note_path, &note_stat) == 0 && (note_stat.st_mode & 0777) == 0600);
 
   route.set_wanted(false);
   for (int i = 0; i < 60 && route.built(); ++i) usleep(25000);
   CHECK(!route.built());
+  for (int i = 0; i < 60 && access(note_path, F_OK) == 0; ++i) usleep(25000);
+  CHECK(access(note_path, F_OK) != 0);
 
   route.set_wanted(true);
   for (int i = 0; i < 60 && !route.built(); ++i) usleep(25000);
   CHECK(route.built());
 
+  CHECK(access(note_path, F_OK) == 0);
   route.stop();
   CHECK(!route.built());
+  CHECK(access(note_path, F_OK) != 0);
+  unsetenv("NBT_AUDIO_ROUTE_NOTE");
   unsetenv("NBT_AUDIOCONN");
   unsetenv("LD_PRELOAD");
 
@@ -1176,6 +1195,29 @@ static void constant_render(void* context, int16_t* out, int frames) {
   for (int i = 0; i < 2 * frames; ++i) out[i] = value;
 }
 
+/* The manager's request to end a mixer nobody plays through: its answer's
+ * digit, or 0 when it gave none. */
+static char mix_end(int port) {
+  struct sockaddr_in where;
+  memset(&where, 0, sizeof(where));
+  where.sin_family = AF_INET;
+  where.sin_port = htons(static_cast<uint16_t>(port));
+  where.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  const int fd = socket(AF_INET, SOCK_STREAM, 0);
+  char reply[16] = {0};
+  size_t have = 0;
+  if (fd >= 0 && connect(fd, reinterpret_cast<struct sockaddr*>(&where), sizeof(where)) == 0 &&
+      send(fd, "NBTMIXE\n", 8, 0) == 8) {
+    while (have < 10) {
+      const ssize_t n = recv(fd, reply + have, 10 - have, 0);
+      if (n <= 0) break;
+      have += static_cast<size_t>(n);
+    }
+  }
+  if (fd >= 0) close(fd);
+  return have == 10 && !memcmp(reply, "NBTMIXE ", 8) && reply[9] == '\n' ? reply[8] : 0;
+}
+
 static void test_audio_mix() {
   char capture[] = "/tmp/nbt-mix-XXXXXX";
   const int capture_fd = mkstemp(capture);
@@ -1208,12 +1250,24 @@ static void test_audio_mix() {
     CHECK(nbt::app::mix_send(fd, 'R', &route, 1));
     for (int i = 0; i < 20; ++i) CHECK(nbt::app::mix_send(fd, 'P', frames, sizeof(frames)));
     usleep(300000);
+    CHECK(mix_end(40000 + getpid() % 5000) == '0'); /* somebody plays: it stays */
     pcm.close();
   }
   unsetenv("NBT_AUDIO_MIXER");
   close(fd);
   int status = -1;
   CHECK(waitpid(mixer, &status, 0) == mixer && WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  /* Nobody plays: it ends at once, long before its idle time. */
+  const pid_t idle = fork();
+  CHECK(idle >= 0);
+  if (idle == 0) _exit(nbt::app::mix_serve(address, 60000)); /* no client: no output opened */
+  char ended = 0;
+  for (int i = 0; i < 100 && ended != '1'; ++i) {
+    ended = mix_end(40000 + getpid() % 5000);
+    if (ended != '1') usleep(20000);
+  }
+  CHECK(ended == '1');
+  CHECK(waitpid(idle, &status, 0) == idle && WIFEXITED(status) && WEXITSTATUS(status) == 0);
   FILE* in = fopen(capture, "rb");
   CHECK(in != NULL);
   int16_t sample[2];

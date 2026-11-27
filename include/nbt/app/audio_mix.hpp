@@ -20,7 +20,11 @@
  * and one more each time that client left it empty kMixStarvesToGrow times
  * (four at most).
  * Version 1 (push, an SDK before version 2): the client sends as fast as TCP
- * takes them; the mixer reads as the output plays. */
+ * takes them; the mixer reads as the output plays.
+ * "NBTMIXE\n" in place of a greeting (the manager, when the audio connection
+ * applications use changed): a mixer nobody plays through answers
+ * "NBTMIXE 1\n" and ends at once, so that the next one starts with the new
+ * connection; one somebody plays through answers "NBTMIXE 0\n" and stays. */
 
 #include <stdint.h>
 

@@ -39,6 +39,34 @@ void trim_output(char* s) {
   while (len > 0 && s[len - 1] == ' ') s[--len] = '\0';
 }
 
+/* NBT_AUDIO_ROUTE_NOTE names a file in which the manager wants the
+ * connection noted before it is built, "NBTROUTE1 <pid> <connection, hex>\n",
+ * private to this user: while this process lives, the manager keeps iDrive
+ * from seeing that connection (it would switch to that source's own screen).
+ * Removed once the connection is released. */
+void note_route(uint32_t conn, bool held) {
+  const char* path = getenv("NBT_AUDIO_ROUTE_NOTE");
+  if (!path || path[0] != '/' || conn == 0 || conn > 0xffffu) return;
+  if (!held) {
+    (void)unlink(path);
+    return;
+  }
+  char text[40];
+  const int length = snprintf(text, sizeof(text), "NBTROUTE1 %ld %x\n", static_cast<long>(getpid()),
+                              static_cast<unsigned>(conn));
+  int flags = O_WRONLY | O_CREAT | O_TRUNC;
+#ifdef O_NOFOLLOW
+  flags |= O_NOFOLLOW;
+#endif
+  const int fd = open(path, flags, 0600);
+  if (fd < 0 || fchmod(fd, 0600) != 0 ||
+      write(fd, text, static_cast<size_t>(length)) != static_cast<ssize_t>(length)) {
+    log_info("audio route: connection 0x%x not noted in %s (errno %d)", static_cast<unsigned>(conn),
+             path, errno);
+  }
+  if (fd >= 0) close(fd);
+}
+
 }  // namespace
 
 uint32_t AudioRoute::parse_conn_env(const char* val, uint32_t fallback) {
@@ -322,6 +350,7 @@ void AudioRoute::worker_loop() {
         char out[256];
         int rc = run_audioconn(path_copy, 'r', conn_copy, out, sizeof(out));
         trim_output(out);
+        note_route(conn_copy, false);
         log_debug("audio route -r 0x%x rc=%d %s", static_cast<unsigned>(conn_copy), rc, out);
 
         pthread_mutex_lock(&mu_);
@@ -337,8 +366,10 @@ void AudioRoute::worker_loop() {
     if (wanted_ && !built_) {
       pthread_mutex_unlock(&mu_);
       char out[256];
+      note_route(conn_copy, true);  // before the car announces the connection
       int rc = run_audioconn(path_copy, 'b', conn_copy, out, sizeof(out));
       trim_output(out);
+      if (rc != 0) note_route(conn_copy, false);
       pthread_mutex_lock(&mu_);
       if (rc == 0) {
         built_ = true;
@@ -368,6 +399,7 @@ void AudioRoute::worker_loop() {
       char out[256];
       int rc = run_audioconn(path_copy, 'r', conn_copy, out, sizeof(out));
       trim_output(out);
+      note_route(conn_copy, false);
       pthread_mutex_lock(&mu_);
       built_ = false;
       fail_streak_ = 0;

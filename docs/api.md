@@ -214,7 +214,8 @@ declared optional in its package (`tools/package.py --bridge 1.6
 - **Car data** (`car-data`, signed `--bridge-cds name,name`):
   `nbt::app::CarData` (`nbt/app/car_data.hpp`), `init()` then
   `read(name, value, size, &sequence)`: iDrive's own text, usually JSON
-  (`{"gear":2}`); nothing until the car gives a value.
+  (`{"gear":2}`); nothing until the car gives a value. In every form (a
+  module or guest needs the runner of an NBT Manager after 0.5.3).
 - **Network** (`net`, signed `--bridge-net tcp:<port>@uap0+wfd0`): NBT Manager
   lets those connections in while the application runs;
   `Lifecycle::net_rules()` is the rules when they are open, else empty.
@@ -228,6 +229,7 @@ UDS requests to the car's control units, sent by NBT Manager as the car's one
 tester (declared `--bridge 1.8 --bridge-optional diag --bridge-diag
 12:read+codes+clear`; the manager's `docs/diag-bridge.md`):
 
+- A native program only: in a module or guest `init()` fails.
 - `nbt::app::Diag`, `init()`, then `read(ecu, did, ...)` (22),
   `codes(ecu, mask, ...)` (19 02), `clear(ecu)` (14, only parked), or
   `request(ecu, uds, ...)` for any request the policy allows: with bridge
@@ -260,6 +262,7 @@ An application with a screen never runs in the background; its service does
 A page of a few widgets in the phone app, and the driver's taps back
 (`--bridge 1.9 --bridge-optional companion`; NBT Manager's
 `docs/companion-bridge.md`). The driver sees "phone screen" before install.
+A native program only: in a module or guest `init()` fails.
 
 - `nbt::app::Companion`, `init()`; then, from the main loop, `begin()`,
   widgets (`title`, `text`, `button`, `toggle`, `choice`, `progress`) and

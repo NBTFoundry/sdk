@@ -180,6 +180,8 @@ static int32_t h_wake(volatile uint32_t* addr, int32_t count) {
 
 static char data_dir[PATH_MAX];
 static char files_dir[PATH_MAX]; /* read only; "" when none */
+static char cds_dir[PATH_MAX];   /* NBT_CDS_DIR: its car-data values, read only; "" when none */
+#define CDS_VALUE_PREFIX "nbt-bridge1-cds-"
 #define MAX_FILES 64
 static int file_fd[MAX_FILES];
 
@@ -188,8 +190,18 @@ static int under(const char* path, const char* dir) {
   return n > 0 && strncmp(path, dir, n) == 0 && (path[n] == '/' || path[n] == '\0');
 }
 
+/* A car-data value the manager publishes for the application (capability
+ * `car-data`): a file of that name directly in NBT_CDS_DIR, nothing else there. */
+static int cds_value(const char* path) {
+  size_t n = strlen(cds_dir);
+  const char* name = path + n + 1;
+  return n > 0 && under(path, cds_dir) && path[n] == '/' && !strchr(name, '/') &&
+         strncmp(name, CDS_VALUE_PREFIX, sizeof(CDS_VALUE_PREFIX) - 1) == 0;
+}
+
 /* Absolute paths must lie in the data folder, or (reading only) in the files
- * folder; relative paths resolve against the data folder. */
+ * folder or be a car-data value; relative paths resolve against the data
+ * folder. */
 static int32_t resolve(const char* path, char* out, size_t size, int write) {
   if (!path || !*path) return -NBT_ENOENT;
   /* No ".." component, anywhere. */
@@ -201,7 +213,9 @@ static int32_t resolve(const char* path, char* out, size_t size, int write) {
     p = end + 1;
   }
   if (path[0] == '/') {
-    if (!under(path, data_dir) && (write || !under(path, files_dir))) return -NBT_EACCES;
+    if (!under(path, data_dir) && (write || (!under(path, files_dir) && !cds_value(path)))) {
+      return -NBT_EACCES;
+    }
     if (strlen(path) >= size) return -NBT_ENAMETOOLONG;
     strcpy(out, path);
     return 0;
@@ -406,6 +420,9 @@ int runner_sys_init(const char* data, const char* files) {
   strcpy(data_dir, data);
   files_dir[0] = '\0';
   if (files && *files && strlen(files) < sizeof(files_dir)) strcpy(files_dir, files);
+  const char* cds = getenv("NBT_CDS_DIR");
+  cds_dir[0] = '\0';
+  if (cds && cds[0] == '/' && strlen(cds) < sizeof(cds_dir)) strcpy(cds_dir, cds);
   for (int i = 0; i < MAX_FILES; ++i) file_fd[i] = -1;
   for (int i = 0; i < WAIT_BUCKETS; ++i) {
     pthread_mutex_init(&buckets[i].mutex, NULL);

@@ -45,8 +45,10 @@ Companion::Companion()
 bool Companion::init() {
   const char* fd = getenv("NBT_COMPANION_FD");
   const char* events = getenv("NBT_COMPANION_EVENTS");
-  if (!fd || strcmp(fd, "11") || fcntl(11, F_GETFD) < 0 || !events || events[0] != '/' ||
-      strlen(events) >= sizeof(events_)) {
+  // The page is a file this process inherited: one it can seek in (a module
+  // or guest has no such descriptors, and no page).
+  if (!fd || strcmp(fd, "11") || fcntl(11, F_GETFD) < 0 || lseek(11, 0, SEEK_CUR) < 0 || !events ||
+      events[0] != '/' || strlen(events) >= sizeof(events_)) {
     return false;
   }
   snprintf(events_, sizeof(events_), "%s", events);

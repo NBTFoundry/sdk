@@ -5,7 +5,12 @@
 # GL and audio faked (the VM has neither). The guest GL stream and audio ring
 # must give the same results as direct calls. Included from the top Makefile.
 
-VM_ENV := NBT_DATA_DIR=/dev/shmem
+# The probes read a car-data value from the boot image (their NBT_CDS_DIR).
+VM_ENV := NBT_DATA_DIR=/dev/shmem NBT_CDS_DIR=/proc/boot
+VM_CDS_VALUE := $(BUILD_DIR)/nbt-bridge1-cds-probe
+$(VM_CDS_VALUE): | $(BUILD_DIR)
+	printf '1 probe\n' > $@
+
 VM_FAKE := NBT_LAUNCH=user NBT_SURFACE=5 NBT_RUNNER_FAKE_GL=1 NBT_RUNNER_FAKE_AUDIO=1 $(VM_ENV)
 VM_SMOKE := NBT_LAUNCH=check NBT_SETTING_SPEED=fast $(VM_ENV) nbt-runner --stop-after-ms 300 --nbt-payload
 # The car probe's draw loop, as the fake GL records it.
@@ -17,7 +22,7 @@ vm_background = -c "$(1) &" -c "waitfor /none $(2)" -c "slay -s TERM nbt-runner"
 
 .PHONY: vm-test
 vm-test: $(RUNNER_PROBE_QNX) $(NBT_RUNNER) $(PROBE_MODULE) $(PROBE_GUEST) $(SMOKE_MODULE) $(SMOKE_GUEST) \
-		$(CAR_PROBE) $(CAR_PROBE_GUEST)
+		$(CAR_PROBE) $(CAR_PROBE_GUEST) $(VM_CDS_VALUE)
 	tools/qnx65-vm/run.sh \
 		-c "$(VM_ENV) runner-probe-qnx /proc/boot/probe.so" \
 		-c "$(VM_ENV) runner-probe-qnx --guest /proc/boot/probe.guest" \

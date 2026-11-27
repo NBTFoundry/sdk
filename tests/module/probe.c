@@ -224,6 +224,27 @@ static void check_files(void) {
   ok &= fopen(name, "r") == NULL && errno == ENOENT;
   check("files: write/read/unlink", ok);
 
+  /* Car data (capability car-data): the values the manager publishes in
+   * NBT_CDS_DIR can be read; nothing else there, and nothing written. */
+  const char* cds = getenv("NBT_CDS_DIR");
+  if (cds && *cds) {
+    char path[160];
+    snprintf(path, sizeof(path), "%s/nbt-bridge1-cds-probe", cds);
+    buf[0] = 0;
+    f = fopen(path, "r");
+    ok = f != NULL && fgets(buf, sizeof(buf), f) != NULL && strcmp(buf, "1 probe\n") == 0;
+    if (f) fclose(f);
+    errno = 0;
+    ok &= fopen(path, "w") == NULL && errno == EACCES;
+    snprintf(path, sizeof(path), "%s/probe.so", cds);
+    errno = 0;
+    ok &= fopen(path, "r") == NULL && errno == EACCES;
+    snprintf(path, sizeof(path), "%s/sub/nbt-bridge1-cds-probe", cds);
+    errno = 0;
+    ok &= fopen(path, "r") == NULL && errno == EACCES;
+    check("files: car-data values readable, nothing else", ok);
+  }
+
   char text[64];
   snprintf(text, sizeof(text), "%08.3f|%-5s|%llx", -2.5, "ab", 0xfedcba987654ull);
   check("stdio: number formatting", strcmp(text, "-002.500|ab   |fedcba987654") == 0);

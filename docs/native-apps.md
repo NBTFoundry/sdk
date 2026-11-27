@@ -59,7 +59,8 @@ Payloads statically contain picolibc, whose BSD-style licences require shipping 
 What a module or guest cannot do:
 - start processes or wait on descriptors: `fork`, `exec*`, `system` and `poll` fail with `ENOSYS`;
 - load libraries;
-- open files outside the application's data folder. The files folder is readable;
+- open files outside the application's data folder. The files folder is readable, and so are the car-data values the manager publishes for it (`nbt::app::CarData`, with a runner of NBT Manager after 0.5.3);
+- use the diagnostics channel (`nbt::app::Diag`) or a phone page (`nbt::app::Companion`): both are descriptors of the application's own process, which a native program has;
 - map files or map at a fixed address: `mmap` takes only anonymous mappings (`MAP_FIXED` fails with `EINVAL`, a file with `ENODEV`) and ignores an address hint.
 
 The C library still declares these functions, so portable code links (`module/runtime/sys_none.c`).
